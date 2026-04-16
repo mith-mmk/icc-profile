@@ -215,6 +215,14 @@ pub struct S15Fixed16Number {
     decimal: u16,
 }
 
+impl S15Fixed16Number {
+    pub fn new(val: f64) -> Self {
+        let integer = val.floor() as i16;
+        let decimal = ((val - val.floor()) * u16::MAX as f64) as u16;
+        S15Fixed16Number { integer, decimal }
+    }
+}
+
 impl ICCNumber for S15Fixed16Number {
     fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / u16::MAX as f32 }
     fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / u16::MAX as f64 }

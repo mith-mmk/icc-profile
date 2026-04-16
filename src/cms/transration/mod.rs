@@ -31,3 +31,5 @@ pub mod cmykrgb;
 pub use cmykrgb::*;
 pub mod whitepoint;
 pub use whitepoint::*;
+pub mod gamma;
+pub use gamma::*;

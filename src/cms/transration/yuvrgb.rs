@@ -99,7 +99,7 @@ pub fn yuv_to_rgb_entries (buf:&[u8],entries: usize,mode: &YUVToRGBCoefficient) 
     Ok(buffer)
 }
 
-pub fn yuv_to_rgba_entries (buf:&[u8],entries: usize,mode: &YUVToRGBCoefficient) -> Result<Vec<u8>> {
+pub fn yuv_to_rgba_entries_from_yuv (buf:&[u8],entries: usize,mode: &YUVToRGBCoefficient) -> Result<Vec<u8>> {
     if buf.len() < entries *3 {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
     }

@@ -325,3 +325,60 @@ fn delta_e76_symmetry() {
         de21
     );
 }
+
+// ===========================================================================
+// CIEDE2000 (ICC標準色差計算)
+// ===========================================================================
+
+#[test]
+fn ciede2000_identical_colors() {
+    use icc_profile::utils::ciede2000;
+    let lab = (50.0, 10.0, -20.0);
+    let de = ciede2000(&lab, &lab);
+    assert!(de < 0.001, "Identical colors should have ΔE00 ≈ 0, got {}", de);
+}
+
+#[test]
+fn ciede2000_black_to_white() {
+    use icc_profile::utils::ciede2000;
+    let black = (0.0, 0.0, 0.0);
+    let white = (100.0, 0.0, 0.0);
+    let de = ciede2000(&black, &white);
+    println!("Black to white ΔE00: {}", de);
+    assert!(de > 99.0, "Black to white ΔE00 should be ~100, got {}", de);
+}
+
+#[test]
+fn ciede2000_nearby_colors() {
+    use icc_profile::utils::ciede2000;
+    let lab1 = (50.0, 0.0, 0.0);
+    let lab2 = (51.0, 0.5, -0.3);
+    let de = ciede2000(&lab1, &lab2);
+    println!("Nearby neutral colors ΔE00: {}", de);
+    assert!(de < 1.5, "Nearby colors should have small ΔE00, got {}", de);
+}
+
+#[test]
+fn ciede2000_red_vs_green() {
+    use icc_profile::utils::ciede2000;
+    let red = (53.24, 80.09, 67.20);
+    let green = (87.74, -86.18, 83.18);
+    let de = ciede2000(&red, &green);
+    println!("Red vs Green ΔE00: {}", de);
+    assert!(de > 80.0, "Red vs Green should have high ΔE00, got {}", de);
+}
+
+#[test]
+fn ciede2000_symmetry() {
+    use icc_profile::utils::ciede2000;
+    let lab1 = (45.0, 20.0, -15.0);
+    let lab2 = (55.0, -10.0, 25.0);
+    let de_forward = ciede2000(&lab1, &lab2);
+    let de_reverse = ciede2000(&lab2, &lab1);
+    assert!(
+        (de_forward - de_reverse).abs() < 0.0001,
+        "CIEDE2000 should be symmetric: {:.6} vs {:.6}",
+        de_forward,
+        de_reverse
+    );
+}

@@ -3,3 +3,4 @@ Cargo.lock
 _test
 _test*
 /target
+/tests/data/*

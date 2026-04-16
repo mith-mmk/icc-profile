@@ -277,3 +277,52 @@ fn truncated_header_returns_error() {
     let result = ICCProfile::new(&short);
     assert!(result.is_err(), "data shorter than 128 bytes should return an error");
 }
+
+// ===========================================================================
+// サンプルプロファイル詳細メタデータ検証
+// ===========================================================================
+
+#[test]
+fn spec400_metadata_extraction() {
+    let (icc, decoded) = load("Spec400_10_700-IllumA-Abs_2deg.icc");
+    
+    // device_class, color_space, pcs を確認
+    println!("Spec400 metadata:");
+    println!("  device_class: {} (0x{:08x})", fourcc(icc.device_class), icc.device_class);
+    println!("  color_space:  {} (0x{:08x})", fourcc(icc.color_space), icc.color_space);
+    println!("  pcs:          {} (0x{:08x})", fourcc(icc.pcs), icc.pcs);
+    
+    // ロード成功と基本的なタグ存在を確認
+    assert!(icc.data.len() > 0);
+    assert!(decoded.tags.len() > 0);
+}
+
+#[test]
+fn sample1_metadata_extraction() {
+    let (icc, decoded) = load("sample1.icc");
+    
+    println!("sample1.icc metadata:");
+    println!("  device_class: {} (0x{:08x})", fourcc(icc.device_class), icc.device_class);
+    println!("  color_space:  {} (0x{:08x})", fourcc(icc.color_space), icc.color_space);
+    println!("  pcs:          {} (0x{:08x})", fourcc(icc.pcs), icc.pcs);
+    println!("  tags count:   {}", decoded.tags.len());
+    
+    // ロード成功と基本的なタグ存在を確認
+    assert!(icc.data.len() > 0);
+    assert!(decoded.tags.len() > 0);
+}
+
+#[test]
+fn sample2_metadata_extraction() {
+    let (icc, decoded) = load("sample2.icc");
+    
+    println!("sample2.icc metadata:");
+    println!("  device_class: {} (0x{:08x})", fourcc(icc.device_class), icc.device_class);
+    println!("  color_space:  {} (0x{:08x})", fourcc(icc.color_space), icc.color_space);
+    println!("  pcs:          {} (0x{:08x})", fourcc(icc.pcs), icc.pcs);
+    println!("  tags count:   {}", decoded.tags.len());
+    
+    // ロード成功と基本的なタグ存在を確認
+    assert!(icc.data.len() > 0);
+    assert!(decoded.tags.len() > 0);
+}

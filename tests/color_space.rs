@@ -270,3 +270,58 @@ fn whitepoint_d50_x_approx() {
     let wp = WhitePoint::d50();
     assert_approx("D50 X", wp.x, 0.9568, 0.005);
 }
+
+// ===========================================================================
+// ΔE76 色差検証
+// ===========================================================================
+
+#[test]
+fn delta_e76_identical_colors() {
+    use icc_profile::utils::delta_e76;
+    let lab = (50.0, 10.0, 20.0);
+    let de = delta_e76(&lab, &lab);
+    assert!(de < 0.001, "Identical colors should have ΔE ≈ 0, got {}", de);
+}
+
+#[test]
+fn delta_e76_black_to_white() {
+    use icc_profile::utils::delta_e76;
+    let lab_black = (0.0, 0.0, 0.0);
+    let lab_white = (100.0, 0.0, 0.0);
+    let de = delta_e76(&lab_black, &lab_white);
+    assert!(de > 99.0, "Black to white should be ΔE > 99, got {}", de);
+}
+
+#[test]
+fn delta_e76_nearby_colors() {
+    use icc_profile::utils::delta_e76;
+    let lab1 = (50.0, 0.0, 0.0);
+    let lab2 = (50.5, 0.2, -0.3);
+    let de = delta_e76(&lab1, &lab2);
+    assert!(de < 1.0, "Nearby colors should have small ΔE, got {}", de);
+}
+
+#[test]
+fn delta_e76_color_metric_red_green() {
+    use icc_profile::utils::delta_e76;
+    // Red-ish vs Green-ish
+    let lab_red = (50.0, 50.0, 30.0);
+    let lab_grn = (50.0, -50.0, 30.0);
+    let de = delta_e76(&lab_red, &lab_grn);
+    assert!(de > 99.0, "Red to green should be large ΔE, got {}", de);
+}
+
+#[test]
+fn delta_e76_symmetry() {
+    use icc_profile::utils::delta_e76;
+    let lab1 = (40.0, 20.0, -10.0);
+    let lab2 = (60.0, 15.0, 5.0);
+    let de12 = delta_e76(&lab1, &lab2);
+    let de21 = delta_e76(&lab2, &lab1);
+    assert!(
+        (de12 - de21).abs() < 0.001,
+        "ΔE should be symmetric: de12={}, de21={}",
+        de12,
+        de21
+    );
+}

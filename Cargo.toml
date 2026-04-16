@@ -1,6 +1,6 @@
 [package]
 name = "icc-profile"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "ICC Profile reader"
@@ -12,4 +12,4 @@ keywords = ["ICCProfile"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bin-rs = {version = "0.0.7",features = ["util"]}
+bin-rs = {version = "0.0.10",features = ["util"]}

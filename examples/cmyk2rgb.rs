@@ -16,7 +16,10 @@ pub fn main() -> std::io::Result<()> {
         let icc_profile = icc_profile::utils::load(argument)?;
         let decoded = DecodedICCProfile::new(&icc_profile.data)?;
         println!("{}",decoded_print(&decoded, 0)?);
-        let lut = decoded.tags.get("A2B0").unwrap();
+        let lut = decoded.tags.get("A2B0").unwrap_or_else(|| {
+            println!("A2B0 tabel is empty");
+            std::process::exit(0);
+        });
 
         let lut16 = if let Data::Lut16(lut16) = lut {
             lut16

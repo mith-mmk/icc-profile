@@ -3,9 +3,9 @@ use crate::cms::transration::*;
 use crate::Mft2;
 
 pub fn cmyk_to_rgb(y:u8,m:u8,c:u8,k:u8) -> (u8,u8,u8) {
-    let r = c + k - 255;
-    let g = m + k - 255;
-    let b = y + k - 255;
+    let r = (c as i16 + k as i16 - 255).clamp(0, 255) as u8;
+    let g = (m as i16 + k as i16 - 255).clamp(0, 255) as u8;
+    let b = (y as i16 + k as i16 - 255).clamp(0, 255) as u8;
     (r,g,b)
 }
 

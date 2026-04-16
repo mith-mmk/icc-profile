@@ -40,14 +40,23 @@ impl RGBToYUVCoefficient {
 }
 
 /// (R,G,B) -> (Y,Cb,Cr)
+/// Cb, Cr は中性点 128 のオフセット値 (0-255) で返す
 pub fn rgb_to_yuv(r:u8,g:u8,b:u8) -> (u8,u8,u8) {
     let matrix = RGBToYUVCoefficient::Bt601.get();
-    matrix.convert_3d_u8(r, g, b) 
+    let (y, cb, cr) = matrix.convert_3d(r as f64, g as f64, b as f64);
+    let y  = (y  + 0.5).clamp(0.0, 255.0) as u8;
+    let cb = (cb + 128.5).clamp(0.0, 255.0) as u8;
+    let cr = (cr + 128.5).clamp(0.0, 255.0) as u8;
+    (y, cb, cr)
 }
 
 pub fn rgb_to_yuv_with_mode(r:u8,g:u8,b:u8,mode: &RGBToYUVCoefficient) -> (u8,u8,u8) {
     let matrix = mode.get();
-    matrix.convert_3d_u8(r, g, b) 
+    let (y, cb, cr) = matrix.convert_3d(r as f64, g as f64, b as f64);
+    let y  = (y  + 0.5).clamp(0.0, 255.0) as u8;
+    let cb = (cb + 128.5).clamp(0.0, 255.0) as u8;
+    let cr = (cr + 128.5).clamp(0.0, 255.0) as u8;
+    (y, cb, cr)
 }
 
 
@@ -65,7 +74,10 @@ pub fn rgb_to_yuv_entries (buf:&[u8],entries: usize,mode: &RGBToYUVCoefficient) 
         let g = buf[ptr + 1];
         let b = buf[ptr + 2];
 
-        let (y,u,v) =matrix.convert_3d_u8(r, g, b);
+        let (y, u, v) = matrix.convert_3d(r as f64, g as f64, b as f64);
+        let y = (y + 0.5).clamp(0.0, 255.0) as u8;
+        let u = (u + 128.5).clamp(0.0, 255.0) as u8;
+        let v = (v + 128.5).clamp(0.0, 255.0) as u8;
 
         buffer.push(y);
         buffer.push(u);
@@ -89,7 +101,10 @@ pub fn yuv_to_rgba_entries (buf:&[u8],entries: usize,mode: &RGBToYUVCoefficient)
         let g = buf[ptr + 1];
         let b = buf[ptr + 2];
 
-        let (y,u,v) =matrix.convert_3d_u8(r, g, b);
+        let (y, u, v) = matrix.convert_3d(r as f64, g as f64, b as f64);
+        let y = (y + 0.5).clamp(0.0, 255.0) as u8;
+        let u = (u + 128.5).clamp(0.0, 255.0) as u8;
+        let v = (v + 128.5).clamp(0.0, 255.0) as u8;
 
         buffer.push(y);
         buffer.push(u);

@@ -189,47 +189,52 @@ fn lab_xyz_lab_roundtrip() {
 }
 
 // ===========================================================================
-// YUV → RGB
-// 注: yuv_to_rgb の BT.601 行列実装は Cb/Cr の -128 オフセットを適用せず
-// 生値 u8 計算を行う。以下のテストは実装の実際の振る舞いを検証する。
+// YUV(YCbCr) ↔ RGB (BT.601)
+// Cb/Cr は 128 が中性点 (オフセット値)
 // ===========================================================================
 
 #[test]
-fn yuv_zero_all_channels() {
-    // Y=0, Cb=0, Cr=0 → 行列計算はクランプされ (0,0,0)
-    let (r, g, b) = yuv_to_rgb(0, 0, 0);
-    // R = 0 + 0*0 + 1.402*0 = 0
-    // G = 0 - 0.344*0 - 0.714*0 = 0
-    // B = 0 + 1.772*0 + 1.0*0 = 0
+fn yuv_black() {
+    // Y=0, Cb=128, Cr=128 → 純粋な黒
+    let (r, g, b) = yuv_to_rgb(0, 128, 128);
     assert_eq!((r, g, b), (0, 0, 0));
 }
 
 #[test]
-fn yuv_y_only_no_chroma() {
-    // Y=100, Cb=0, Cr=0 → R=100, G=100, B=100 (Cb=Cr=0 の時
-    // B = 100 + 1.772*0 + 1.0*0 = 100 → 実装依存)
-    let (r, g, b) = yuv_to_rgb(100, 0, 0);
-    // R = 100 + 1.402*0 = 100
-    // G = 100 + 0 = 100
-    // B = 100 + 0 + 0 = 100
-    assert_eq!((r, g, b), (100, 100, 100));
+fn yuv_white() {
+    // Y=255, Cb=128, Cr=128 → 純粋な白
+    let (r, g, b) = yuv_to_rgb(255, 128, 128);
+    assert_eq!((r, g, b), (255, 255, 255));
+}
+
+#[test]
+fn yuv_mid_gray() {
+    // Y=128, Cb=128, Cr=128 → 中間グレー
+    let (r, g, b) = yuv_to_rgb(128, 128, 128);
+    assert_eq!((r, g, b), (128, 128, 128));
+}
+
+#[test]
+fn yuv_rgb_roundtrip() {
+    use icc_profile::cms::transration::{rgb_to_yuv, yuv_to_rgb};
+    // RGB → YUV → RGB がほぼ一致すること (量子化誤差 ±1)
+    for &(r0, g0, b0) in &[(200u8, 50, 80), (100u8, 200, 30), (128u8, 128, 128)] {
+        let (y, cb, cr) = rgb_to_yuv(r0, g0, b0);
+        let (r1, g1, b1) = yuv_to_rgb(y, cb, cr);
+        assert!((r0 as i32 - r1 as i32).abs() <= 2, "R roundtrip: {} → {}", r0, r1);
+        assert!((g0 as i32 - g1 as i32).abs() <= 2, "G roundtrip: {} → {}", g0, g1);
+        assert!((b0 as i32 - b1 as i32).abs() <= 2, "B roundtrip: {} → {}", b0, b1);
+    }
 }
 
 #[test]
 fn yuv_consistency_bt601_vs_bt709() {
-    // BT.601 と BT.709 は同じ入力で異なる出力を返すはず
-    let (r601, _, _) = yuv_to_rgb(128, 64, 192);
-    let (r709, _, _) = yuv_to_rgb_with_mode(128, 64, 192, &YUVToRGBCoefficient::Bt709);
-    // 希内: BT.601 と BT.709 の結果は差异がある (crr: 1.402 vs 1.5748)
-    // 少なくとも 1 以上差があるはずだが、実装の挙動を確認するのみ
-    let _ = r601 as i32 - r709 as i32; // パニックしないことを確認
-}
-
-#[test]
-fn yuv_y_255_clamps_to_255() {
-    // Y=255, Cb=0, Cr=0 → R=G=B=255 (225 以上はクランプ)
-    let (r, g, b) = yuv_to_rgb(255, 0, 0);
-    assert_eq!((r, g, b), (255, 255, 255));
+    // BT.601 と BT.709 は同じ入力で異なる出力を返すはず (crr: 1.402 vs 1.5748)
+    let (r601, _, _) = yuv_to_rgb(100, 100, 200);
+    let (r709, _, _) = yuv_to_rgb_with_mode(100, 100, 200, &YUVToRGBCoefficient::Bt709);
+    // Cr=200 → offset後 72。crr の差 (0.1728) で ≥ 12 の差がある
+    assert!((r601 as i32 - r709 as i32).abs() >= 10,
+        "BT.601({}) and BT.709({}) should differ for non-neutral chroma", r601, r709);
 }
 
 // ===========================================================================

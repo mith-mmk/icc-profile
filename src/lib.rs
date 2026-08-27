@@ -32,6 +32,12 @@ pub use crate::iccprofile::*;
 pub mod utils;
 pub mod iccprofile;
 pub mod cms;
+pub mod transform;
+
+pub use transform::{
+    ColorSpace, ParseLimits, Pcs, Profile, RenderingIntent, Transform, TransformError,
+    TransformOptions, TransformWorker,
+};
 
 #[cfg(test)]
 mod tests {

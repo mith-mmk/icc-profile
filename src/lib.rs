@@ -29,6 +29,7 @@
 //! - CMYK 0..255,0..255,0..255,0..255 (u8)
 
 pub use crate::iccprofile::*;
+mod color_diff;
 pub mod utils;
 pub mod iccprofile;
 pub mod cms;

@@ -4,3 +4,5 @@ _test
 _test*
 /target
 /tests/data/*
+.test*
+test_data

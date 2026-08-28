@@ -9,6 +9,14 @@ use super::reader::D50;
 use super::route_plan::{admit_pair, plan_route, plan_route_with_policy, OwnerPolicy};
 use std::sync::Arc;
 
+const REFERENCE_BLACK_XYZ: [f32; 3] = [0.003357, 0.003479, 0.002869];
+const REFERENCE_WHITE_XYZ: [f32; 3] = [0.9642, 1.0, 0.8249];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReversePcsConnection {
+    V2MatrixToV4B2A0ReferenceBlack,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransformDirection {
     DeviceToPcs,
@@ -235,6 +243,7 @@ pub struct Transform {
     output_raw_version: [u8; 4],
     input_raw_device_class: [u8; 4],
     output_raw_device_class: [u8; 4],
+    reverse_pcs_connection: Option<ReversePcsConnection>,
     pub(super) options: TransformOptions,
 }
 
@@ -286,6 +295,13 @@ impl Transform {
                 "matrix/TRC non-relative intent requires media white",
             ));
         }
+        let reverse_pcs_connection = select_reverse_pcs_connection(
+            &input_route,
+            &output_route,
+            input,
+            output,
+            options.rendering_intent,
+        )?;
         let mut budget = CompileBudget::new(limits);
         admit_pair(&input_route, &output_route, &mut budget)?;
         let pair = materialize_pair(
@@ -316,6 +332,7 @@ impl Transform {
             output_raw_version: output.raw_version(),
             input_raw_device_class: input.raw_device_class(),
             output_raw_device_class: output.raw_device_class(),
+            reverse_pcs_connection,
             options,
         })
     }
@@ -446,6 +463,9 @@ impl Transform {
                     self.options.clamp,
                 );
                 let mut pcs = xyz;
+                if let Some(connection) = self.reverse_pcs_connection {
+                    connection.apply(&mut pcs)?;
+                }
                 bridge_pcs(
                     &mut pcs,
                     super::profile::Pcs::Xyz,
@@ -518,6 +538,72 @@ impl Transform {
 
     pub fn transform_u16(&self, input: &[u16], output: &mut [u16]) -> Result<(), TransformError> {
         super::worker::transform_u16(self, input, output)
+    }
+}
+
+fn select_reverse_pcs_connection(
+    input_route: &super::route_plan::RoutePlan<'_>,
+    output_route: &super::route_plan::RoutePlan<'_>,
+    input: &Profile,
+    output: &Profile,
+    intent: RenderingIntent,
+) -> Result<Option<ReversePcsConnection>, TransformError> {
+    if !matches!(
+        intent,
+        RenderingIntent::Perceptual | RenderingIntent::Saturation
+    ) {
+        return Ok(None);
+    }
+
+    let candidate_shape = input.color_space() == super::profile::ColorSpace::Rgb
+        && output.color_space() == super::profile::ColorSpace::Rgb
+        && input.raw_version()[0] == 2
+        && output.raw_version()[0] == 4
+        && input_route.is_matrix()
+        && output_route.is_lut()
+        && output_route.route_info().selected_tag() == Some(*b"B2A0");
+    if !candidate_shape {
+        return Ok(None);
+    }
+
+    if input.raw_device_class() != *b"mntr" || output.raw_device_class() != *b"mntr" {
+        return Err(TransformError::UnsupportedProfileFeature(
+            "reverse reference-black route requires an RGB monitor pairing",
+        ));
+    }
+    let matrix = input_route
+        .matrix()
+        .ok_or(TransformError::InvalidProfile("missing matrix route plan"))?;
+    if !matrix.zero_black_status()? {
+        return Err(TransformError::UnsupportedProfileFeature(
+            "reverse reference-black route requires an exact zero source black",
+        ));
+    }
+    Ok(Some(ReversePcsConnection::V2MatrixToV4B2A0ReferenceBlack))
+}
+
+impl ReversePcsConnection {
+    fn apply(self, xyz: &mut [f32; 3]) -> Result<(), TransformError> {
+        match self {
+            Self::V2MatrixToV4B2A0ReferenceBlack => {
+                for ((value, black), white) in xyz
+                    .iter_mut()
+                    .zip(REFERENCE_BLACK_XYZ)
+                    .zip(REFERENCE_WHITE_XYZ)
+                {
+                    if !value.is_finite() {
+                        return Err(TransformError::NonFiniteInput);
+                    }
+                    *value = *value * (1.0 - black / white) + black;
+                    if !value.is_finite() {
+                        return Err(TransformError::MalformedProfile(
+                            "reference-black bridge produced a non-finite XYZ value".into(),
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -829,3 +915,7 @@ mod compile_s3_tests;
 #[cfg(test)]
 #[path = "compile_s4_tests.rs"]
 mod compile_s4_tests;
+
+#[cfg(test)]
+#[path = "reverse_diagnostics_tests.rs"]
+mod reverse_diagnostics_tests;

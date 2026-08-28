@@ -215,7 +215,7 @@ pub(super) fn parse_curve(data: &[u8], limits: ParseLimits) -> Result<Curve, Tra
                 _ => {
                     return Err(TransformError::UnsupportedProfileFeature(
                         "parametric curve function",
-                    ))
+                    ));
                 }
             };
             checked_range(data, 12, count * 4)?;
@@ -315,7 +315,7 @@ pub(super) fn parse_curve_forward(
                 _ => {
                     return Err(TransformError::UnsupportedProfileFeature(
                         "parametric curve function",
-                    ))
+                    ));
                 }
             };
             let bytes = count
@@ -466,7 +466,7 @@ pub(super) fn validate_parametric_curve_values(
         _ => {
             return Err(TransformError::UnsupportedProfileFeature(
                 "parametric curve function",
-            ))
+            ));
         }
     }
     if direction == 0 {
@@ -476,7 +476,7 @@ pub(super) fn validate_parametric_curve_values(
     }
 }
 
-fn eval_parametric(function: u16, values: &[f32], x: f32) -> f32 {
+pub(super) fn eval_parametric(function: u16, values: &[f32], x: f32) -> f32 {
     match function {
         0 if !values.is_empty() => x.powf(values[0]),
         1 if values.len() >= 3 => {

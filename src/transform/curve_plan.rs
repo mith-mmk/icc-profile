@@ -2,7 +2,7 @@ use super::compile_budget::CompileBudget;
 use super::curve::Curve;
 use super::error::TransformError;
 use super::limits::{ParseLimits, TransformLimits};
-use super::reader::{be_u16, be_u32, checked_range};
+use super::reader::{be_i32, be_u16, be_u32, checked_range};
 
 /// Borrowed, allocation-free shape information for one matrix/TRC curve.
 #[derive(Clone, Copy, Debug, Default)]
@@ -20,6 +20,39 @@ pub(super) enum CurveKind {
     Gamma(f32),
     Table,
     Para(u16),
+}
+
+impl CurvePlan<'_> {
+    /// Evaluate the borrowed curve at the device black endpoint without
+    /// creating a materialized `Curve`.
+    pub(super) fn zero_value(&self) -> Result<f32, TransformError> {
+        let x = 0.0_f32;
+        let value = match self.kind {
+            CurveKind::Identity => x,
+            CurveKind::Gamma(gamma) => x.powf(gamma),
+            CurveKind::Table => {
+                if self.entries == 0 {
+                    x
+                } else {
+                    f32::from(be_u16(self.data, 12)?) / 65535.0
+                }
+            }
+            CurveKind::Para(function) => {
+                let mut values = [0.0_f32; 7];
+                for (index, value) in values.iter_mut().take(self.entries).enumerate() {
+                    *value = be_i32(self.data, 12 + index * 4)? as f32 / 65536.0;
+                }
+                super::curve::eval_parametric(function, &values, x)
+            }
+        };
+        if value.is_finite() {
+            Ok(value)
+        } else {
+            Err(TransformError::InvalidProfile(
+                "curve endpoint is non-finite",
+            ))
+        }
+    }
 }
 
 pub(super) fn plan_curve(

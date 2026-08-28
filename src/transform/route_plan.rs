@@ -206,6 +206,22 @@ fn validate_executable_model(profile: &Profile, model: RouteModel) -> Result<(),
 }
 
 impl RoutePlan<'_> {
+    pub(super) fn is_matrix(&self) -> bool {
+        self.stage.is_matrix()
+    }
+
+    pub(super) fn is_lut(&self) -> bool {
+        !self.stage.is_matrix()
+    }
+
+    pub(super) fn matrix(&self) -> Option<&MatrixPlan<'_>> {
+        self.stage.matrix()
+    }
+
+    pub(super) fn route_info(&self) -> RouteInfo {
+        self.route_info
+    }
+
     pub(super) fn admit(&self, budget: &mut CompileBudget) -> Result<(), TransformError> {
         let checkpoint = budget.checkpoint();
         let result = (|| {

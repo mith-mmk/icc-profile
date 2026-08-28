@@ -20,6 +20,36 @@ pub(super) struct MatrixPlan<'a> {
 }
 
 impl<'a> MatrixPlan<'a> {
+    pub(super) fn zero_black_status(&self) -> Result<bool, TransformError> {
+        if self.channels != 3 {
+            return Ok(false);
+        }
+        let mut linear = [0.0_f32; 3];
+        for (value, curve) in linear
+            .iter_mut()
+            .zip(self.curves.iter().take(self.channels))
+        {
+            *value = curve.zero_value()?;
+        }
+        let physical = [
+            self.matrix[0][0] * linear[0]
+                + self.matrix[0][1] * linear[1]
+                + self.matrix[0][2] * linear[2],
+            self.matrix[1][0] * linear[0]
+                + self.matrix[1][1] * linear[1]
+                + self.matrix[1][2] * linear[2],
+            self.matrix[2][0] * linear[0]
+                + self.matrix[2][1] * linear[1]
+                + self.matrix[2][2] * linear[2],
+        ];
+        if physical.iter().any(|value| !value.is_finite()) {
+            return Err(TransformError::InvalidProfile(
+                "matrix black endpoint is non-finite",
+            ));
+        }
+        Ok(physical.iter().all(|value| *value == 0.0))
+    }
+
     #[cfg(test)]
     pub(super) fn inventory(
         &self,

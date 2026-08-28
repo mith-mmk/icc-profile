@@ -1,10 +1,10 @@
 //! ICC profile reader crate
-//! ``` 
+//! ```
 //! use icc_profile::utils::decoded_print;
 //! use icc_profile::iccprofile::*;
-//! 
+//!
 //! use std::env;
-//! 
+//!
 //! pub fn main() -> std::io::Result<()> {
 //!     let mut is_fast = true;
 //!     for argument in env::args() {
@@ -19,7 +19,7 @@
 //!     }
 //!     Ok(())
 //! }
-//! 
+//!
 //! ```
 //! # Default Color spaces ranges
 //! - RGB        0..255,0..255,0..255 (u8)
@@ -29,15 +29,23 @@
 //! - CMYK 0..255,0..255,0..255,0..255 (u8)
 
 pub use crate::iccprofile::*;
-mod color_diff;
-pub mod utils;
-pub mod iccprofile;
 pub mod cms;
+mod color_diff;
+pub mod iccprofile;
 pub mod transform;
+pub mod utils;
+
+#[cfg(test)]
+pub(crate) mod allocation_probe;
+
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOCATOR: allocation_probe::Probe = allocation_probe::Probe;
 
 pub use transform::{
-    ColorSpace, ParseLimits, Pcs, Profile, RenderingIntent, Transform, TransformError,
-    TransformOptions, TransformWorker,
+    ColorSpace, CompiledProfile, ExecutionLimits, ExecutionLimitsBuilder, ParseLimits, Pcs,
+    Profile, RenderingIntent, RouteInfo, RouteModel, Transform, TransformDirection, TransformError,
+    TransformLimits, TransformLimitsBuilder, TransformOptions, TransformWorker,
 };
 
 #[cfg(test)]

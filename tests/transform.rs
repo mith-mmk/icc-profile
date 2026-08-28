@@ -1,4 +1,6 @@
-use icc_profile::{ColorSpace, ParseLimits, Profile, Transform, TransformError, TransformOptions};
+use icc_profile::{
+    ColorSpace, ParseLimits, Profile, RenderingIntent, Transform, TransformError, TransformOptions,
+};
 
 fn put_u32(data: &mut [u8], at: usize, value: u32) {
     data[at..at + 4].copy_from_slice(&value.to_be_bytes());
@@ -9,6 +11,8 @@ fn put_i32(data: &mut [u8], at: usize, value: i32) {
 
 fn synthetic_rgb_profile() -> Vec<u8> {
     let mut profile = vec![0u8; 132 + 6 * 12];
+    profile[8..12].copy_from_slice(&[4, 0, 0, 0]);
+    profile[12..16].copy_from_slice(b"mntr");
     put_u32(&mut profile, 16, u32::from_be_bytes(*b"RGB "));
     put_u32(&mut profile, 20, u32::from_be_bytes(*b"XYZ "));
     put_u32(&mut profile, 36, u32::from_be_bytes(*b"acsp"));
@@ -90,6 +94,8 @@ fn replace_last_trc(mut profile: Vec<u8>, tag: &[u8]) -> Vec<u8> {
 fn synthetic_gray_profile() -> Vec<u8> {
     let tag = gamma(2.2);
     let mut profile = vec![0u8; 132 + 12 + tag.len()];
+    profile[8..12].copy_from_slice(&[4, 0, 0, 0]);
+    profile[12..16].copy_from_slice(b"mntr");
     put_u32(&mut profile, 16, u32::from_be_bytes(*b"GRAY"));
     put_u32(&mut profile, 20, u32::from_be_bytes(*b"XYZ "));
     put_u32(&mut profile, 36, u32::from_be_bytes(*b"acsp"));
@@ -100,6 +106,33 @@ fn synthetic_gray_profile() -> Vec<u8> {
     put_u32(&mut profile, 136, offset as u32);
     put_u32(&mut profile, 140, tag.len() as u32);
     profile[offset..offset + tag.len()].copy_from_slice(&tag);
+    let profile_len = profile.len() as u32;
+    put_u32(&mut profile, 0, profile_len);
+    profile
+}
+
+fn synthetic_gray_media_white(white: Vec<u8>) -> Vec<u8> {
+    let trc = gamma(2.2);
+    let mut profile = vec![0u8; 132 + 2 * 12];
+    profile[8..12].copy_from_slice(&[4, 0, 0, 0]);
+    profile[12..16].copy_from_slice(b"mntr");
+    put_u32(&mut profile, 16, u32::from_be_bytes(*b"GRAY"));
+    put_u32(&mut profile, 20, u32::from_be_bytes(*b"XYZ "));
+    put_u32(&mut profile, 36, u32::from_be_bytes(*b"acsp"));
+    put_u32(&mut profile, 64, 1);
+    put_u32(&mut profile, 128, 2);
+    let trc_offset = 156usize;
+    profile.resize(trc_offset + trc.len(), 0);
+    profile[trc_offset..trc_offset + trc.len()].copy_from_slice(&trc);
+    put_u32(&mut profile, 132, u32::from_be_bytes(*b"kTRC"));
+    put_u32(&mut profile, 136, trc_offset as u32);
+    put_u32(&mut profile, 140, trc.len() as u32);
+    let white_offset = (profile.len() + 3) & !3;
+    profile.resize(white_offset + white.len(), 0);
+    profile[white_offset..white_offset + white.len()].copy_from_slice(&white);
+    put_u32(&mut profile, 144, u32::from_be_bytes(*b"wtpt"));
+    put_u32(&mut profile, 148, white_offset as u32);
+    put_u32(&mut profile, 152, white.len() as u32);
     let profile_len = profile.len() as u32;
     put_u32(&mut profile, 0, profile_len);
     profile
@@ -144,6 +177,99 @@ fn matrix_trc_transform_is_thread_shareable_and_quantized() {
 }
 
 #[test]
+fn wrappers_validate_lengths_before_processing_and_accept_empty_buffers() {
+    let profile = Profile::new(&synthetic_rgb_profile()).unwrap();
+    let transform = Transform::new(&profile, &profile, TransformOptions::default()).unwrap();
+
+    let mut f32_output = [7.0; 3];
+    assert!(matches!(
+        transform.transform_f32(&[0.0; 4], &mut f32_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(f32_output, [7.0; 3]);
+    let mut f32_short_output = [8.0; 2];
+    assert!(matches!(
+        transform.transform_f32(&[0.0; 3], &mut f32_short_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(f32_short_output, [8.0; 2]);
+    assert!(transform.transform_f32(&[], &mut []).is_ok());
+
+    let mut u8_output = [7u8; 3];
+    assert!(matches!(
+        transform.transform_u8(&[0; 4], &mut u8_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(u8_output, [7; 3]);
+    let mut u8_short_output = [8u8; 2];
+    assert!(matches!(
+        transform.transform_u8(&[0; 3], &mut u8_short_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(u8_short_output, [8; 2]);
+    assert!(transform.transform_u8(&[], &mut []).is_ok());
+
+    let mut u16_output = [7u16; 3];
+    assert!(matches!(
+        transform.transform_u16(&[0; 4], &mut u16_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(u16_output, [7; 3]);
+    let mut u16_short_output = [8u16; 2];
+    assert!(matches!(
+        transform.transform_u16(&[0; 3], &mut u16_short_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(u16_short_output, [8; 2]);
+    assert!(transform.transform_u16(&[], &mut []).is_ok());
+
+    let mut worker = transform.worker();
+    let mut worker_output = [9.0; 3];
+    assert!(matches!(
+        worker.transform_f32(&[0.0; 4], &mut worker_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(worker_output, [9.0; 3]);
+    let mut worker_short_output = [10.0; 2];
+    assert!(matches!(
+        worker.transform_f32(&[0.0; 3], &mut worker_short_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(worker_short_output, [10.0; 2]);
+    assert!(worker.transform_f32(&[], &mut []).is_ok());
+
+    let mut worker = transform.worker();
+    let mut worker_u8_output = [9u8; 3];
+    assert!(matches!(
+        worker.transform_u8(&[0; 4], &mut worker_u8_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(worker_u8_output, [9; 3]);
+    let mut worker_u8_short_output = [10u8; 2];
+    assert!(matches!(
+        worker.transform_u8(&[0; 3], &mut worker_u8_short_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(worker_u8_short_output, [10; 2]);
+    assert!(worker.transform_u8(&[], &mut []).is_ok());
+
+    let mut worker = transform.worker();
+    let mut worker_u16_output = [9u16; 3];
+    assert!(matches!(
+        worker.transform_u16(&[0; 4], &mut worker_u16_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(worker_u16_output, [9; 3]);
+    let mut worker_u16_short_output = [10u16; 2];
+    assert!(matches!(
+        worker.transform_u16(&[0; 3], &mut worker_u16_short_output),
+        Err(TransformError::InvalidBufferLength { .. })
+    ));
+    assert_eq!(worker_u16_short_output, [10; 2]);
+    assert!(worker.transform_u16(&[], &mut []).is_ok());
+}
+
+#[test]
 fn gray_transform_has_one_channel_and_rgb_to_gray_is_safe() {
     let rgb = Profile::new(&synthetic_rgb_profile()).unwrap();
     let gray = Profile::new(&synthetic_gray_profile()).unwrap();
@@ -172,6 +298,28 @@ fn unsupported_intent_and_bpc_are_explicit_errors() {
     options.black_point_compensation = true;
     assert!(matches!(
         Transform::new(&profile, &profile, options),
+        Err(TransformError::UnsupportedProfileFeature(_))
+    ));
+}
+
+#[test]
+fn absolute_transform_validates_selected_media_white() {
+    let valid = synthetic_gray_media_white(xyz(0.9642, 1.0, 0.8249));
+    let destination = Profile::parse(&valid).unwrap();
+    let options = TransformOptions {
+        rendering_intent: RenderingIntent::AbsoluteColorimetric,
+        ..TransformOptions::default()
+    };
+    for white in [vec![0; 4], xyz(0.0, 1.0, 0.8249), xyz(0.9642, -1.0, 0.8249)] {
+        let source = Profile::parse(&synthetic_gray_media_white(white)).unwrap();
+        assert!(matches!(
+            Transform::new(&source, &destination, options),
+            Err(TransformError::InvalidProfile(_) | TransformError::MalformedProfile(_))
+        ));
+    }
+    let absent = Profile::parse(&synthetic_gray_profile()).unwrap();
+    assert!(matches!(
+        Transform::new(&absent, &destination, options),
         Err(TransformError::UnsupportedProfileFeature(_))
     ));
 }
@@ -326,4 +474,40 @@ fn parametric_inverse_handles_plateau_decrease_and_rejects_bad_shapes() {
         Profile::new(&micro_non_monotonic),
         Err(TransformError::UnsupportedProfileFeature(_))
     ));
+}
+
+#[test]
+fn forward_parametric_unused_power_branch_is_not_validated() {
+    for function in [1, 2] {
+        let bytes = replace_last_trc(
+            synthetic_rgb_profile(),
+            &para(
+                function,
+                &[1.0, 1.0, -2.0, 0.0][..3 + usize::from(function == 2)],
+            ),
+        );
+        let profile = Profile::parse(&bytes).unwrap();
+        let forward = profile
+            .compile(
+                icc_profile::TransformDirection::DeviceToPcs,
+                RenderingIntent::RelativeColorimetric,
+                icc_profile::TransformLimits::default(),
+            )
+            .unwrap();
+        let mut output = [0.0; 3];
+        forward
+            .transform_f32(&[0.0, 0.0, 1.0], &mut output)
+            .unwrap();
+        assert_eq!(output[2], 0.0, "unused power branch: function {function}");
+
+        assert!(matches!(
+            profile.compile(
+                icc_profile::TransformDirection::PcsToDevice,
+                RenderingIntent::RelativeColorimetric,
+                icc_profile::TransformLimits::default(),
+            ),
+            Err(TransformError::UnsupportedProfileFeature(_))
+                | Err(TransformError::InvalidProfile(_))
+        ));
+    }
 }

@@ -1,5 +1,6 @@
 use icc_profile::{
-    ColorSpace, ParseLimits, Profile, RenderingIntent, Transform, TransformError, TransformOptions,
+    ColorSpace, ParseLimits, Profile, RenderingIntent, Transform, TransformDirection,
+    TransformError, TransformLimits, TransformOptions,
 };
 
 fn put_u32(data: &mut [u8], at: usize, value: u32) {
@@ -174,6 +175,142 @@ fn matrix_trc_transform_is_thread_shareable_and_quantized() {
     for handle in handles {
         assert_eq!(handle.join().unwrap().len(), 3);
     }
+}
+
+#[test]
+fn memory_usage_reports_checked_profile_and_compiled_owners() {
+    let bytes = synthetic_rgb_profile();
+    let profile = Profile::new(&bytes).unwrap();
+    let profile_memory = profile.memory_usage().unwrap();
+    assert!(profile_memory.profile_bytes() >= bytes.len());
+    assert_eq!(
+        profile_memory.resident_bytes(),
+        profile_memory.profile_bytes()
+    );
+    assert_eq!(
+        profile_memory.build_peak_bytes(),
+        profile_memory.resident_bytes()
+    );
+
+    let transform = Transform::new(&profile, &profile, TransformOptions::default()).unwrap();
+    let compiled_memory = transform.memory_usage().unwrap();
+    assert!(compiled_memory.compiled_bytes() > 0);
+    assert_eq!(
+        compiled_memory.profile_bytes(),
+        profile_memory.profile_bytes()
+    );
+    assert_eq!(
+        compiled_memory.resident_bytes(),
+        compiled_memory.profile_bytes() + compiled_memory.compiled_bytes()
+    );
+    let build_memory = transform
+        .memory_usage_with_profiles(&profile, &profile)
+        .unwrap();
+    assert_eq!(build_memory, compiled_memory);
+    assert_eq!(
+        build_memory.resident_bytes(),
+        build_memory.profile_bytes() + build_memory.compiled_bytes()
+    );
+    let unrelated = Profile::new(&bytes).unwrap();
+    assert!(matches!(
+        transform.memory_usage_with_profiles(&unrelated, &unrelated),
+        Err(TransformError::InvalidProfile(_))
+    ));
+    let direction = profile
+        .compile(
+            TransformDirection::DeviceToPcs,
+            RenderingIntent::RelativeColorimetric,
+            TransformLimits::default(),
+        )
+        .unwrap();
+    assert!(direction.memory_usage().unwrap().compiled_bytes() > 0);
+
+    let exact = direction.memory_usage().unwrap().compiled_bytes();
+    let exact_limits = TransformLimits::builder()
+        .max_compiled_bytes(exact)
+        .build()
+        .unwrap();
+    assert!(profile
+        .compile(
+            TransformDirection::DeviceToPcs,
+            RenderingIntent::RelativeColorimetric,
+            exact_limits,
+        )
+        .is_ok());
+    let under_limits = TransformLimits::builder()
+        .max_compiled_bytes(exact - 1)
+        .build()
+        .unwrap();
+    assert!(matches!(
+        profile.compile(
+            TransformDirection::DeviceToPcs,
+            RenderingIntent::RelativeColorimetric,
+            under_limits,
+        ),
+        Err(TransformError::ResourceLimit(_))
+    ));
+
+    let pair_exact = compiled_memory.compiled_bytes();
+    let pair_limits = TransformLimits::builder()
+        .max_compiled_bytes(pair_exact)
+        .build()
+        .unwrap();
+    assert!(Transform::new_with_limits(
+        &profile,
+        &profile,
+        TransformOptions::default(),
+        pair_limits,
+    )
+    .is_ok());
+    let pair_under = TransformLimits::builder()
+        .max_compiled_bytes(pair_exact - 1)
+        .build()
+        .unwrap();
+    assert!(matches!(
+        Transform::new_with_limits(&profile, &profile, TransformOptions::default(), pair_under,),
+        Err(TransformError::ResourceLimit(_))
+    ));
+
+    let one_shot = Transform::from_bytes_with_limits(
+        &bytes,
+        &bytes,
+        TransformOptions::default(),
+        ParseLimits::default(),
+        TransformLimits::default(),
+    )
+    .unwrap();
+    let one_shot_memory = one_shot.memory_usage().unwrap();
+    assert!(one_shot_memory.profile_bytes() >= bytes.len());
+    assert!(one_shot_memory.compiled_bytes() > 0);
+    assert_eq!(
+        one_shot_memory.build_peak_bytes(),
+        one_shot_memory.resident_bytes()
+    );
+    assert!(matches!(
+        Transform::from_bytes_with_limits(
+            &[0; 8],
+            &bytes,
+            TransformOptions::default(),
+            ParseLimits::default(),
+            TransformLimits::default(),
+        ),
+        Err(TransformError::InvalidProfile(_))
+    ));
+}
+
+#[test]
+fn distinct_equal_profiles_are_charged_twice_for_build_memory() {
+    let bytes = synthetic_rgb_profile();
+    let input = Profile::new(&bytes).unwrap();
+    let output = Profile::new(&bytes).unwrap();
+    let transform = Transform::new(&input, &output, TransformOptions::default()).unwrap();
+    let input_memory = input.memory_usage().unwrap().profile_bytes();
+    let output_memory = output.memory_usage().unwrap().profile_bytes();
+    let memory = transform
+        .memory_usage_with_profiles(&input, &output)
+        .unwrap();
+    assert_eq!(memory.profile_bytes(), input_memory + output_memory);
+    assert_eq!(memory.build_peak_bytes(), memory.resident_bytes());
 }
 
 #[test]

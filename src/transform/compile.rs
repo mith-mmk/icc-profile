@@ -39,7 +39,7 @@ pub(super) struct CompiledDirection {
 /// An immutable, direction-specific transform stage.  Large curve and CLUT
 /// payloads are shared by clones and are not copied when a worker is created.
 #[derive(Clone, Debug)]
-pub struct CompiledProfile(Arc<CompiledDirection>);
+pub struct CompiledProfile(pub(super) Arc<CompiledDirection>);
 
 impl Profile {
     pub fn compile(
@@ -229,10 +229,16 @@ fn materialize_pair(
 
 #[derive(Clone, Debug)]
 pub struct Transform {
+    // Retain the immutable source owners used during construction. Besides
+    // making the transform lifetime explicit, this prevents a caller from
+    // passing unrelated profiles to memory_usage_with_profiles and receiving
+    // an understated build charge.
+    pub(super) input_profile: Profile,
+    pub(super) output_profile: Profile,
     pub(super) input: Option<Arc<MatrixProfile>>,
     pub(super) output: Option<Arc<MatrixProfile>>,
-    lut_input: Option<Arc<LutTransform>>,
-    lut_output: Option<Arc<LutTransform>>,
+    pub(super) lut_input: Option<Arc<LutTransform>>,
+    pub(super) lut_output: Option<Arc<LutTransform>>,
     input_pcs: super::profile::Pcs,
     output_pcs: super::profile::Pcs,
     input_white: Option<[f32; 3]>,
@@ -248,6 +254,23 @@ pub struct Transform {
 }
 
 impl Transform {
+    /// Parse both profiles with the supplied structural limits and compile a
+    /// transform with the supplied decoded-owner limits as one checked
+    /// operation.  Parsing and stage admission each happen before their
+    /// derived allocations; callers can inspect the retained ownership with
+    /// [`Transform::memory_usage`].
+    pub fn from_bytes_with_limits(
+        input: &[u8],
+        output: &[u8],
+        options: TransformOptions,
+        parse_limits: super::limits::ParseLimits,
+        transform_limits: TransformLimits,
+    ) -> Result<Self, TransformError> {
+        let input_profile = Profile::parse_with_limits(input, parse_limits)?;
+        let output_profile = Profile::parse_with_limits(output, parse_limits)?;
+        Self::new_with_limits(&input_profile, &output_profile, options, transform_limits)
+    }
+
     pub fn new(
         input: &Profile,
         output: &Profile,
@@ -318,6 +341,8 @@ impl Transform {
         let lut_input = input_stage.lut.clone();
         let lut_output = output_stage.lut.clone();
         Ok(Self {
+            input_profile: input.clone(),
+            output_profile: output.clone(),
             input: input_matrix,
             output: output_matrix,
             lut_input,

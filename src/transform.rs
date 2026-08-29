@@ -11,6 +11,7 @@ mod execution;
 mod limits;
 mod lut;
 mod lut_plan;
+mod memory;
 mod profile;
 mod reader;
 mod route_plan;
@@ -32,6 +33,7 @@ pub use error::TransformError;
 pub use limits::{
     ExecutionLimits, ExecutionLimitsBuilder, ParseLimits, TransformLimits, TransformLimitsBuilder,
 };
+pub use memory::TransformMemory;
 pub use profile::TransformOptions;
 pub use profile::{ColorSpace, Pcs, Profile, RenderingIntent, RouteInfo, RouteModel};
 pub use worker::TransformWorker;

@@ -107,7 +107,7 @@ pub(super) struct MatrixProfile {
 pub(super) struct ProfileInner {
     // The immutable ProfileInner is already Arc-owned. Keeping the Vec here
     // avoids a second full payload allocation when converting Vec into Arc<[u8]>.
-    data: Vec<u8>,
+    pub(super) data: Vec<u8>,
     length: usize,
     raw_version: [u8; 4],
     raw_device_class: [u8; 4],

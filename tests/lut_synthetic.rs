@@ -1362,6 +1362,112 @@ fn mab_curve_set_entries_respect_transform_limit_before_materialization() {
 }
 
 #[test]
+fn reported_lut_memory_is_the_compile_limit_boundary() {
+    for (raw, direction) in [
+        (
+            profile(*b"RGB ", vec![(*b"A2B0", identity_mft2())]),
+            TransformDirection::DeviceToPcs,
+        ),
+        (
+            profile(*b"RGB ", vec![(*b"A2B0", mab_lab_white())]),
+            TransformDirection::DeviceToPcs,
+        ),
+    ] {
+        let parsed = Profile::parse(&raw).unwrap();
+        let compiled = parsed
+            .compile(
+                direction,
+                RenderingIntent::RelativeColorimetric,
+                TransformLimits::default(),
+            )
+            .unwrap();
+        let exact = compiled.memory_usage().unwrap().compiled_bytes();
+        let exact_limits = TransformLimits::builder()
+            .max_compiled_bytes(exact)
+            .build()
+            .unwrap();
+        assert!(parsed
+            .compile(
+                direction,
+                RenderingIntent::RelativeColorimetric,
+                exact_limits
+            )
+            .is_ok());
+        let under_limits = TransformLimits::builder()
+            .max_compiled_bytes(exact - 1)
+            .build()
+            .unwrap();
+        assert!(matches!(
+            parsed.compile(
+                direction,
+                RenderingIntent::RelativeColorimetric,
+                under_limits
+            ),
+            Err(TransformError::ResourceLimit(_))
+        ));
+    }
+}
+
+#[test]
+fn one_shot_lut_parsing_defers_unused_matrix_validation() {
+    let malformed = vec![(*b"rXYZ", vec![0u8])];
+    let source = profile(
+        *b"RGB ",
+        [vec![(*b"A2B0", identity_mft2())], malformed.clone()].concat(),
+    );
+    let destination = profile(
+        *b"RGB ",
+        [vec![(*b"B2A0", identity_mft2())], malformed].concat(),
+    );
+    let result = Transform::from_bytes_with_limits(
+        &source,
+        &destination,
+        TransformOptions::default(),
+        icc_profile::ParseLimits::default(),
+        TransformLimits::default(),
+    );
+    assert!(result.is_ok());
+}
+
+#[test]
+fn reported_pair_memory_is_exact_for_mft_mab_and_mba_routes() {
+    for (source_tag, source_lut, destination_tag, destination_lut) in [
+        (*b"A2B0", identity_mft2(), *b"B2A0", identity_mft2()),
+        (*b"A2B0", mab_lab_white(), *b"B2A0", mab_b2a_identity()),
+    ] {
+        let source = Profile::new(&profile(*b"RGB ", vec![(source_tag, source_lut)])).unwrap();
+        let destination =
+            Profile::new(&profile(*b"RGB ", vec![(destination_tag, destination_lut)])).unwrap();
+        let transform = Transform::new(&source, &destination, TransformOptions::default()).unwrap();
+        let exact = transform.memory_usage().unwrap().compiled_bytes();
+        let exact_limits = TransformLimits::builder()
+            .max_compiled_bytes(exact)
+            .build()
+            .unwrap();
+        assert!(Transform::new_with_limits(
+            &source,
+            &destination,
+            TransformOptions::default(),
+            exact_limits,
+        )
+        .is_ok());
+        let under_limits = TransformLimits::builder()
+            .max_compiled_bytes(exact - 1)
+            .build()
+            .unwrap();
+        assert!(matches!(
+            Transform::new_with_limits(
+                &source,
+                &destination,
+                TransformOptions::default(),
+                under_limits,
+            ),
+            Err(TransformError::ResourceLimit(_))
+        ));
+    }
+}
+
+#[test]
 fn mab_and_mba_stage_presence_matrix_is_checked() {
     let matrix = d50_matrix_rgb_profile();
     let input = Profile::new(&matrix).unwrap();

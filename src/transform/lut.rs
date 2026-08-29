@@ -25,7 +25,7 @@ const MBA: u32 = u32::from_be_bytes(*b"mBA ");
 pub(super) struct LutTransform {
     pub(super) input_channels: usize,
     pub(super) output_channels: usize,
-    kind: LutKind,
+    pub(super) kind: LutKind,
     pcs_encoding: PcsEncoding,
 }
 
@@ -38,7 +38,7 @@ pub(super) enum PcsEncoding {
 }
 
 #[derive(Clone, Debug)]
-enum LutKind {
+pub(super) enum LutKind {
     Mft {
         matrix: [[f32; 3]; 3],
         input: Vec<Table>,
@@ -56,19 +56,19 @@ enum LutKind {
 }
 
 #[derive(Clone, Debug)]
-struct Table(Vec<f32>);
+pub(super) struct Table(pub(super) Vec<f32>);
 
 #[derive(Clone, Debug)]
-struct Matrix {
+pub(super) struct Matrix {
     values: [[f32; 3]; 3],
     offset: [f32; 3],
 }
 
 #[derive(Clone, Debug)]
-struct Clut {
-    grid: Vec<usize>,
-    channels: usize,
-    values: Vec<f32>,
+pub(super) struct Clut {
+    pub(super) grid: Vec<usize>,
+    pub(super) channels: usize,
+    pub(super) values: Vec<f32>,
 }
 
 /// The allocation-free structural description consumed by the native LUT

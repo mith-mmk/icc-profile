@@ -45,7 +45,7 @@ static TEST_ALLOCATOR: allocation_probe::Probe = allocation_probe::Probe;
 pub use transform::{
     ColorSpace, CompiledProfile, ExecutionLimits, ExecutionLimitsBuilder, ParseLimits, Pcs,
     Profile, RenderingIntent, RouteInfo, RouteModel, Transform, TransformDirection, TransformError,
-    TransformLimits, TransformLimitsBuilder, TransformOptions, TransformWorker,
+    TransformLimits, TransformLimitsBuilder, TransformMemory, TransformOptions, TransformWorker,
 };
 
 #[cfg(test)]

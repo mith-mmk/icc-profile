@@ -1,27 +1,45 @@
-# ICC Profile Reader
+# icc-profile
+
+Pure Rust ICC profile parsing and explicit Gray/RGB color transforms.
+
+The 0.0.5 release candidate provides a checked ICC v2/v4 CMS for Gray and
+RGB profiles. The processing core is `f32` and supports D50 PCS, XYZ/Lab,
+chromatic adaptation (`chad`), Gray TRC, RGB matrix/TRC, `curv`, parametric
+curves 0-4, `mft1`, `mft2`, `mAB`, `mBA`, A2B/B2A intent selection, optional
+stages, 1D interpolation, and tetrahedral 3D interpolation.
+
+CMYK, N-color, MPE, black-point compensation, and other unsupported routes
+return `UnsupportedProfileFeature`; there is no simplified color fallback.
+Alpha is not passed to the CMS and must be handled by the caller.
 
 ## Example
 
 ```rust
-pub fn main() -> std::io::Result<()> {
-    let mut is_fast = true;
-    for argument in env::args() {
-        if is_fast {
-            is_fast = false;
-            continue
-        }
-        println!("{}",argument);
-        let icc_profile = icc_profile::utils::load(argument)?;
-        let decoded = DecodedICCProfile::new(&icc_profile.data)?;
-        println!("{}",decoded_print(&decoded, 0)?);
-    }
-    Ok(())
+use icc_profile::{Profile, RenderingIntent, Transform, TransformOptions};
+
+fn convert(source_icc: &[u8], destination_icc: &[u8], input: &[f32])
+    -> Result<Vec<f32>, Box<dyn std::error::Error>>
+{
+    let source = Profile::from_bytes(source_icc)?;
+    let destination = Profile::from_bytes(destination_icc)?;
+    let transform = Transform::new(
+        &source,
+        &destination,
+        TransformOptions {
+            rendering_intent: RenderingIntent::RelativeColorimetric,
+            ..TransformOptions::default()
+        },
+    )?;
+    let mut output = vec![0.0; input.len()];
+    transform.transform_f32(input, &mut output)?;
+    Ok(output)
 }
 ```
 
 ## Testing
 
-The project includes comprehensive integration tests for ICC profile handling and color space conversions.
+The project includes checked parser and transform tests for ICC profile
+handling and color space conversions.
 
 ### Running Unit Tests (No Samples Required)
 
@@ -29,11 +47,11 @@ The project includes comprehensive integration tests for ICC profile handling an
 cargo test --lib
 ```
 
-This runs 14 unit tests covering color space math and gamma curves with no external dependencies.
+This runs the no-fixture unit and synthetic transform tests.
 
 ### Running Full Test Suite (Requires ICC Profiles)
 
-For the 96 integration tests that use ICC profile samples:
+External fixture tests are optional and are not required for packaging:
 
 1. **Prepare test samples** by creating `_test_samples/` directory:
 
@@ -44,8 +62,6 @@ mkdir -p _test_samples
 2. **Add ICC profile files** from trusted sources:
    - **sRGB**: `sRGB_v4_ICC_preference.icc` (or similar standard sRGB profile)
      - Source: Windows/macOS system profiles, or Adobe RGB profile
-   - **Printer (CMYK)**: `JapanColor2011Coated.icc`, `ycck.icc`
-     - Source: Printing vendor profiles (Agfa, EFI, Heidelberg, etc.)
    - **Monitor**: `asus_rog_strix_xg309cm.icm`
      - Source: Monitor manufacturer profile
    - **Reference**: `Spec400_10_700-IllumA-Abs_2deg.icc`, `sample1.icc`, `sample2.icc`
@@ -59,20 +75,13 @@ cargo test
 
 ### Test Coverage
 
-- **Unit tests** (14): Color space conversions, gamma curves, white point math
-- **Integration tests** (96): 
-  - ICC profile loading and parsing
-  - CMYK→RGB pipeline transformations
-  - Color difference metrics (ΔE76, CIEDE2000)
-  - LUT8/LUT16 profile handling
-  - Pipeline roundtrip validation
-
-**Total: 110 tests** ✅
+- Gray/RGB matrix/TRC, D50 PCS, XYZ/Lab, and chromatic adaptation
+- `curv`, parametric curves 0-4, LUT8/LUT16, mAB/mBA, and A2B/B2A intents
+- 1D and tetrahedral interpolation, endpoints, malformed profiles, and limits
 
 ### Supported Profile Formats
 
 - Display profiles (RGB, Monitor)
-- Printer profiles (CMYK, YCCK)
 - Color space profiles (Lab)
 - LUT types: Lut8, Lut16, LutAtoB, LutBtoA
 - ICC v2.0 - v4.2
@@ -87,10 +96,10 @@ Trusted sources for ICC profiles:
 
 ⚠️ **Do not use profiles from unknown or untrusted sources**
 
-## Todo
+## Release boundary
 
-- ICC Profile 4.x, 5.x tags full support
-- RGB→CMYK inverse pipeline (complete LUT inversion)
+This release is limited to explicit Gray/RGB transforms. Unsupported color
+spaces and processing elements fail closed rather than being approximated.
 ## License
 
 Licensed under either of

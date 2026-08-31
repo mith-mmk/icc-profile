@@ -1,7 +1,7 @@
-# ICC CMS 0.1.0 implementation plan
+# ICC CMS 0.0.5 implementation and release plan
 
 This document is the durable scope and release checklist for the `icc-profile`
-0.1.0 CMS work. It records implementation boundaries and acceptance gates, not
+0.0.5 Gray/RGB CMS work. It records implementation boundaries and acceptance gates, not
 individual work logs. The normative reference is [ICC.1:2022](https://www.color.org/specifications/ICC.1-2022-05.pdf).
 
 ## Current checkpoint
@@ -26,9 +26,13 @@ The following work is complete and must remain API-compatible:
 - Canonical Sharma CIEDE2000 and CIE76 implementations behind the existing
   `utils::delta_e76` and `utils::ciede2000` signatures.
 
-The crate version remains `0.0.4` until every 0.1.0 gate below is complete.
+The crate version is `0.0.5` on the release-preparation branch. Publication,
+tagging, and merge to the release branch remain separate approval-gated steps.
 
-## Remaining implementation scope
+The broader 0.1.0 checklist below is retained as historical follow-up
+context. It is not a gate for this narrowed Gray/RGB 0.0.5 release.
+
+## Historical 0.1.0 follow-up scope
 
 ### Parsing and compilation
 
@@ -73,12 +77,13 @@ The crate version remains `0.0.4` until every 0.1.0 gate below is complete.
 - [ ] Make rendering intent and black-point compensation behavior explicit in
   `TransformOptions`. Unsupported or unavailable requested options must return
   an error rather than be silently ignored.
-- [ ] Add explicit JXL adapter conversions for CMYK convention differences;
-  CMS internals must not acquire an implicit CMYK convention.
+- [x] Keep format-specific adapters outside the CMS; this release has no
+  external format integration and no implicit CMYK convention.
 
-## Verification gates
+## Historical verification gates
 
-All gates are required before changing the version to 0.1.0.
+The implementation gates below are recorded for audit; only package and
+publish dry-run items remain open on this branch.
 
 - [ ] Preserve all existing tests and add isolated tests for each parser,
   curve, LUT, PCS, intent, and optional-stage combination.
@@ -90,8 +95,8 @@ All gates are required before changing the version to 0.1.0.
 - [ ] Verify U8/U16 wrappers against the f32 core for quantization consistency,
   and verify one-thread and concurrent use of the same `Transform` produce
   identical output.
-- [ ] Verify grayscale, CMYK, spot/extra-channel, ICC-embedded, and PCS XYZ/Lab
-  paths using JXL integration fixtures once the JXL adapter exists.
+- [x] Verify Gray/RGB, ICC-embedded, and PCS XYZ/Lab paths with synthetic
+  vectors; CMYK, N-color, MPE, and BPC remain explicit unsupported paths.
 - [ ] Exercise malformed ICC, truncated data, huge tags/CLUTs, integer
   overflow, and resource-limit cases; assert no panic, OOM-triggering
   unbounded allocation, or partial success.
@@ -109,26 +114,25 @@ dependency:
 
 1. Implement and review all CMS feature branches, then merge the feature PRs
    into `dev`.
-2. Prepare a release PR with version `0.1.0`, changelog, README, MSRV, API and
+2. Prepare a release PR with version `0.0.5`, changelog, README, MSRV, API and
    feature documentation only after every verification gate passes.
 3. Merge the release PR into `master`, run the complete test suite on clean
    `master`, and verify the exact release commit.
 4. Before tagging, pass package listing, locked-package, and publish dry-run
    checks from clean `master` and verify the package contents.
-5. Create and push the annotated `0.1.0` tag.
-6. Publish `icc-profile 0.1.0`; after registry propagation, build an empty
-   consumer pinned to exactly `icc-profile = "=0.1.0"` and verify that no path
+5. Create and push the annotated `0.0.5` tag.
+6. Publish `icc-profile 0.0.5`; after registry propagation, build an empty
+   consumer pinned to exactly `icc-profile = "=0.0.5"` and verify that no path
    or git dependency is selected.
 7. Verify crate contents, docs, license, repository metadata, CI, and the
    corresponding GitHub release.
-8. Only after that consumer verification may `jxl-rust 0.1.0` switch from its
-   tested development dependency to the registry dependency and be released.
-   `wml2 0.0.29` follows only after the JXL registry consumer gate passes.
+8. Downstream consumers, including WML2, switch to the registry dependency
+   only after this consumer verification passes.
 
-Tags are never moved after publication. Post-tag corrections use `0.1.1` for
-ICC/JXL (or the corresponding next patch release) and the planned downstream
-version; yanking is reserved for security, package-integrity, license, or
-fatal dependency failures.
+Tags are never moved after publication. Post-tag corrections use the
+corresponding next patch release and planned downstream version; yanking is
+reserved for security, package-integrity, license, or fatal dependency
+failures.
 
 ## Source and oracle policy
 

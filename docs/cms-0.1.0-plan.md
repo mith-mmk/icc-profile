@@ -26,8 +26,10 @@ The following work is complete and must remain API-compatible:
 - Canonical Sharma CIEDE2000 and CIE76 implementations behind the existing
   `utils::delta_e76` and `utils::ciede2000` signatures.
 
-The crate version is `0.0.5` on the release-preparation branch. Publication,
-tagging, and merge to the release branch remain separate approval-gated steps.
+As of 2026-09-05, the implementation history is integrated into `main` and
+the crate version is `0.0.6`. The user authorized main integration, a patch
+release to crates.io, and subsequent WML2 dependency validation. See the
+[release checklist](release-checklist.md) for the current release status.
 
 The broader 0.1.0 checklist below is retained as historical follow-up
 context. It is not a gate for this narrowed Gray/RGB 0.0.5 release.
@@ -107,7 +109,12 @@ publish dry-run items remain open on this branch.
   and documentation files, with no ignored fixture or machine-local path
   required for the normal build.
 
-## Release sequence
+## Historical 0.0.5 release sequence
+
+For the current 0.0.6 release, the requested sequence is main integration,
+version increment, package/dry-run checks, crates.io publication and registry
+verification, followed by WML2 dependency update and tests. The original
+sequence below is retained as history, not as an additional publication gate.
 
 The release order is fixed so downstream crates never resolve an unpublished
 dependency:

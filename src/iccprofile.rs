@@ -1515,7 +1515,7 @@ impl Data {
                 let mut profiles = vec![];
                 for _ in 0..counts {
                     bound_check(data,ptr,20)?;
-                    if remain <= 0 {break;}
+                    if remain == 0 {break;}
                     let device_manufacturer = read_u32_be(data, ptr);
                     ptr += 4;
                     let device_model = read_u32_be(data, ptr);

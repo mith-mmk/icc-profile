@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.0.6 - 2026-09-05
+
+### Maintenance
+
+- Integrate the Gray/RGB CMS implementation history into `main`.
+- Refresh release documentation after the 0.0.5 publication and prepare the
+  patch release for WML2 integration.
+- Preserve the 0.0.5 public APIs and transform behavior; this release does
+  not change the color conversion algorithms.
+- Replace a redundant unsigned `<= 0` check with `== 0` so current Clippy
+  accepts the legacy profile reader without changing its behavior.
+
 ## 0.0.5 - 2026-08-31
 
 ### Added

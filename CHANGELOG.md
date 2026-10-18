@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.0.7 - 2026-10-18
+
+### Fixed
+
+- Connect a source LUT to the destination LUT's physical PCS before encoding
+  its input. Lab-PCS destinations previously received XYZ numbers as Lab,
+  producing severely incorrect colors. Matrix destinations retain XYZ.
+- Preserve the existing single XYZ media-white bridge for absolute intent.
+
+### Tests
+
+- Add matrix/modern-LUT/legacy-LUT XYZ/Lab reference combinations, including
+  Gray matrix controls, relative and absolute intents.
+- Add a frozen LittleCMS-generated Lab-PCS profile and recorded independent
+  references for u8, u16 and f32. LittleCMS is optional fixture-generation
+  tooling only; no runtime, build or dev dependency is added.
+
+### Compatibility
+
+- Public APIs and dependencies are unchanged. CMYK, N-color, MPE and BPC
+  remain outside the checked transform capability.
+- Legacy external-profile tests still require the documented local sample
+  files; these samples are not bundled or silently substituted.
+
 ## 0.0.6 - 2026-09-05
 
 ### Maintenance

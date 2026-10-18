@@ -2,11 +2,14 @@
 
 Pure Rust ICC profile parsing and explicit Gray/RGB color transforms.
 
-Version 0.0.6 provides a checked ICC v2/v4 CMS for Gray and
+Version 0.0.7 provides a checked ICC v2/v4 CMS for Gray and
 RGB profiles. The processing core is `f32` and supports D50 PCS, XYZ/Lab,
 chromatic adaptation (`chad`), Gray TRC, RGB matrix/TRC, `curv`, parametric
 curves 0-4, `mft1`, `mft2`, `mAB`, `mBA`, A2B/B2A intent selection, optional
 stages, 1D interpolation, and tetrahedral 3D interpolation.
+
+Version 0.0.7 corrects the physical PCS connection between paired LUT stages
+when the destination uses Lab PCS. Matrix destinations continue to use XYZ.
 
 CMYK, N-color, MPE, black-point compensation, and other unsupported routes
 return `UnsupportedProfileFeature`; there is no simplified color fallback.

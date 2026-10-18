@@ -1548,3 +1548,200 @@ fn gray_channel_changes_require_a_clut_pair() {
         );
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+enum BridgeModel {
+    Matrix,
+    ModernXyz,
+    ModernLab,
+    LegacyXyz,
+    LegacyLab,
+}
+
+fn bridge_profile(model: BridgeModel, white: [f32; 3], source: bool) -> Profile {
+    if matches!(model, BridgeModel::Matrix) {
+        return Profile::new(&matrix_rgb_profile_with_white(white)).unwrap();
+    }
+    let legacy = matches!(model, BridgeModel::LegacyXyz | BridgeModel::LegacyLab);
+    let lab = matches!(model, BridgeModel::ModernLab | BridgeModel::LegacyLab);
+    let stage = if legacy {
+        identity_mft2()
+    } else if source {
+        mab_b_only()
+    } else {
+        mab_b2a_identity()
+    };
+    let mut bytes = profile_with_pcs(
+        *b"RGB ",
+        if lab { *b"Lab " } else { *b"XYZ " },
+        vec![
+            (if source { *b"A2B1" } else { *b"B2A1" }, stage),
+            (*b"wtpt", xyz(white[0], white[1], white[2])),
+        ],
+    );
+    if legacy {
+        bytes[8] = 2;
+    }
+    Profile::new(&bytes).unwrap()
+}
+
+fn bridge_device_sample(model: BridgeModel, xyz: [f32; 3], lab: [f32; 3]) -> [f32; 3] {
+    match model {
+        BridgeModel::Matrix => [xyz[0] / 0.9642, xyz[1], xyz[2] / 0.8249],
+        BridgeModel::ModernXyz | BridgeModel::LegacyXyz => {
+            xyz.map(|value| value * (32768.0 / 65535.0))
+        }
+        BridgeModel::ModernLab => [
+            lab[0] / 100.0,
+            (lab[1] + 128.0) / 255.0,
+            (lab[2] + 128.0) / 255.0,
+        ],
+        BridgeModel::LegacyLab => [
+            lab[0] * (65280.0 / (100.0 * 65535.0)),
+            (lab[1] + 128.0) * (256.0 / 65535.0),
+            (lab[2] + 128.0) * (256.0 / 65535.0),
+        ],
+    }
+}
+
+#[test]
+fn physical_pcs_bridge_covers_matrix_and_xyz_lab_luts() {
+    // Independent CIE D50 reference vectors from LittleCMS 2.16's
+    // cmsLab2XYZ/cmsXYZ2Lab, not from this crate's transform or PCS helpers.
+    // Absolute control scales physical XYZ by source/destination white = 0.8.
+    let references = [
+        ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        (
+            [0.17759264, 0.18418652, 0.15193546],
+            [50.0, 0.0, 0.0],
+            [45.268974, 0.0, 0.0],
+        ),
+        (
+            [0.26353118, 0.18418652, 0.30656707],
+            [50.0, 40.0, -30.0],
+            [45.268974, 37.13271, -27.849533],
+        ),
+        (
+            [0.9642, 1.0, 0.8249],
+            [100.0, 0.0, 0.0],
+            [91.68486, 0.0, 0.0],
+        ),
+    ];
+    let models = [
+        BridgeModel::Matrix,
+        BridgeModel::ModernXyz,
+        BridgeModel::ModernLab,
+        BridgeModel::LegacyXyz,
+        BridgeModel::LegacyLab,
+    ];
+    for intent in [
+        RenderingIntent::RelativeColorimetric,
+        RenderingIntent::AbsoluteColorimetric,
+    ] {
+        let absolute = intent == RenderingIntent::AbsoluteColorimetric;
+        let source_white = if absolute {
+            [0.77136, 0.8, 0.65992]
+        } else {
+            [0.9642, 1.0, 0.8249]
+        };
+        for source_model in models {
+            let source = bridge_profile(source_model, source_white, true);
+            for destination_model in models {
+                let destination = bridge_profile(destination_model, [0.9642, 1.0, 0.8249], false);
+                let transform = Transform::new(
+                    &source,
+                    &destination,
+                    TransformOptions {
+                        rendering_intent: intent,
+                        ..TransformOptions::default()
+                    },
+                )
+                .unwrap();
+                for (physical_xyz, physical_lab, absolute_lab) in references {
+                    let input = bridge_device_sample(source_model, physical_xyz, physical_lab);
+                    let expected = bridge_device_sample(
+                        destination_model,
+                        physical_xyz.map(|value| if absolute { value * 0.8 } else { value }),
+                        if absolute { absolute_lab } else { physical_lab },
+                    );
+                    let mut output = [0.0; 3];
+                    transform.transform_f32(&input, &mut output).unwrap();
+                    for (actual, expected) in output.into_iter().zip(expected) {
+                        // Header XYZ values are encoded as s15Fixed16; this
+                        // allows their rounding in both matrix and white tags.
+                        assert!((actual - expected).abs() < 0.0001,
+                            "{intent:?} {source_model:?}->{destination_model:?}, Lab={physical_lab:?}: {output:?}, expected {expected}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn gray_lab_matrix_routes_keep_the_physical_xyz_boundary() {
+    for intent in [
+        RenderingIntent::RelativeColorimetric,
+        RenderingIntent::AbsoluteColorimetric,
+    ] {
+        let absolute = intent == RenderingIntent::AbsoluteColorimetric;
+        let source_white = if absolute {
+            [0.77136, 0.8, 0.65992]
+        } else {
+            [0.9642, 1.0, 0.8249]
+        };
+        let gray = |white: [f32; 3]| {
+            Profile::new(&profile_with_pcs(
+                *b"GRAY",
+                *b"Lab ",
+                vec![
+                    (*b"kTRC", identity_curve()),
+                    (*b"wtpt", xyz(white[0], white[1], white[2])),
+                ],
+            ))
+            .unwrap()
+        };
+        let source_gray = gray(source_white);
+        let destination_lab = bridge_profile(BridgeModel::ModernLab, [0.9642, 1.0, 0.8249], false);
+        let options = TransformOptions {
+            rendering_intent: intent,
+            ..TransformOptions::default()
+        };
+        let forward = Transform::new(&source_gray, &destination_lab, options).unwrap();
+        let expected_l = if absolute { 0.45268974 } else { 0.5 };
+        let mut output = [0.0; 3];
+        forward.transform_f32(&[0.5], &mut output).unwrap();
+        for (actual, expected) in output
+            .into_iter()
+            .zip([expected_l, 128.0 / 255.0, 128.0 / 255.0])
+        {
+            assert!(
+                (actual - expected).abs() < 0.0001,
+                "Gray Lab matrix->Lab LUT {intent:?}: {output:?}"
+            );
+        }
+        let destination_gray = gray([0.9642, 1.0, 0.8249]);
+        for source_model in [
+            BridgeModel::ModernXyz,
+            BridgeModel::ModernLab,
+            BridgeModel::LegacyXyz,
+            BridgeModel::LegacyLab,
+        ] {
+            let source = bridge_profile(source_model, source_white, true);
+            let reverse = Transform::new(&source, &destination_gray, options).unwrap();
+            // Luminance stays the same for non-neutral Lab: a*/b* must not
+            // become the Gray matrix's device input merely because PCS=Lab.
+            let input = bridge_device_sample(
+                source_model,
+                [0.26353118, 0.18418652, 0.30656707],
+                [50.0, 40.0, -30.0],
+            );
+            let mut output = [0.0];
+            reverse.transform_f32(&input, &mut output).unwrap();
+            assert!(
+                (output[0] - expected_l).abs() < 0.0001,
+                "{source_model:?}->Gray Lab matrix {intent:?}: {output:?}"
+            );
+        }
+    }
+}

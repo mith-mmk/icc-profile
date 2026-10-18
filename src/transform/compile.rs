@@ -459,7 +459,13 @@ impl Transform {
                 bridge_pcs(
                     &mut pcs,
                     self.input_pcs,
-                    Pcs::Xyz,
+                    // Matrix destinations consume physical XYZ; LUT
+                    // destinations encode their own physical PCS below.
+                    if self.lut_output.is_some() {
+                        self.output_pcs
+                    } else {
+                        Pcs::Xyz
+                    },
                     self.options.rendering_intent == RenderingIntent::AbsoluteColorimetric,
                     self.input_white,
                     self.output_white,

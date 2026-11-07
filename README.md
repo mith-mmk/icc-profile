@@ -15,6 +15,23 @@ CMYK, N-color, MPE, black-point compensation, and other unsupported routes
 return `UnsupportedProfileFeature`; there is no simplified color fallback.
 Alpha is not passed to the CMS and must be handled by the caller.
 
+## Interpolation and LittleCMS compatibility
+
+The 3D CLUT evaluator uses tetrahedral interpolation. LittleCMS 2.16
+[selects trilinear interpolation for Lab-PCS output (B2A) LUTs](https://github.com/mm2/Little-CMS/blob/lcms2.16/src/cmsio1.c#L621-L624),
+so matching profiles and rendering intents need not produce identical values.
+
+In a 10,010-color sRGB-to-synthetic-Lab-PCS RGB LUT comparison, the maximum
+RGB8 channel difference was 18/255. Evaluating the same LUT with trilinear
+interpolation reduced the observed difference to at most 1/255. The comparison
+used relative colorimetric intent, BPC off, and LittleCMS
+`NOOPTIMIZE | NOCACHE`; these figures are observations, not general error bounds.
+
+Neither method is universally more accurate; results depend on the profile
+and samples. This comparison does not establish an ICC specification violation,
+and numerical comparisons with manufacturer Lab-PCS output profiles remain
+unverified. The current interpolation behavior is unchanged.
+
 ## Example
 
 ```rust

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.0.8 - 2026-11-11
+
+### Dependencies
+
+- Update the private `bin-rs` dependency from 0.0.10 to 0.1.0, retaining its
+  `util` feature. No downstream API migration is required for this update.
+
+### Fixed
+
+- Return errors before legacy ASCII reads on truncated `sig ` / `desc` tags,
+  undersized declared tag lengths, and short `data` headers. Check the actual
+  shifted range in the legacy extended-description branch before reading it.
+  These malformed inputs could panic after the dependency range correction.
+- Preserve successful decoding, including existing description offsets and
+  version selection. This is not a comprehensive legacy-parser safety audit.
+
+### Compatibility
+
+- Public APIs are unchanged; no ICC specification or transform algorithm is
+  redesigned. Narrow legacy input guards accompany the dependency update.
+- The dependency update includes the earlier `bin-rs` ASCII range correction:
+  legacy tag text now honors the requested offset and length instead of reading
+  the entire buffer. Legacy text output can therefore differ from 0.0.7.
+- Legacy profile IDs also inherit the corrected 128-bit read: the low 64 bits
+  now come from the second half of the ID rather than repeating the first half.
+- The ICC specification and API are still evolving. This dependency migration
+  does not declare ICC API stability or establish an ICC minimum Rust version.
+
 ## 0.0.7 - 2026-10-18
 
 ### Fixed

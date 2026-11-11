@@ -14,6 +14,8 @@
 - The dependency update includes the earlier `bin-rs` ASCII range correction:
   legacy tag text now honors the requested offset and length instead of reading
   the entire buffer. Legacy text output can therefore differ from 0.0.7.
+- Legacy profile IDs also inherit the corrected 128-bit read: the low 64 bits
+  now come from the second half of the ID rather than repeating the first half.
 - The ICC specification and API are still evolving. This dependency migration
   does not declare ICC API stability or establish an ICC minimum Rust version.
 

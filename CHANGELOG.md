@@ -9,8 +9,11 @@
 
 ### Compatibility
 
-- This is a dependency-only maintenance release. ICC source code, public APIs,
-  parsing policy, transform algorithms and error behavior are unchanged.
+- This is a dependency-only maintenance release. ICC source code and public APIs
+  are unchanged; no ICC specification or transform algorithm is redesigned.
+- The dependency update includes the earlier `bin-rs` ASCII range correction:
+  legacy tag text now honors the requested offset and length instead of reading
+  the entire buffer. Legacy text output can therefore differ from 0.0.7.
 - The ICC specification and API are still evolving. This dependency migration
   does not declare ICC API stability or establish an ICC minimum Rust version.
 

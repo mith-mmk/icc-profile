@@ -831,7 +831,7 @@ impl Data {
 
     pub fn get(data_type:&str,data: &[u8],length:usize,version:u32) -> Result<Data> {
         let len = length.checked_sub(8).ok_or_else(|| {
-            Error::new(ErrorKind::Other, "ICC tag data shortage")
+            Error::other("ICC tag data shortage")
         })?;
         let mut ptr = 8;
         bound_check(data,ptr, len)?;
@@ -917,13 +917,13 @@ impl Data {
             },
             "desc" => {
                 if len < 4 {
-                    return Err(Error::new(ErrorKind::Other, "ICC description data shortage"));
+                    return Err(Error::other("ICC description data shortage"));
                 }
                 if version >= 0x40000000 {
                     let counts = read_u32_be(data, ptr) as usize;
                     ptr +=4;
                     data.get(ptr+4..).and_then(|rest| rest.get(..counts)).ok_or_else(|| {
-                        Error::new(ErrorKind::Other, "ICC description data shortage")
+                        Error::other("ICC description data shortage")
                     })?;
                     bound_check(data,ptr,counts)?;
                     let ascii_string = read_ascii_string(data, ptr+4,counts);
@@ -1331,7 +1331,7 @@ impl Data {
             },
             "data" => {
                 let payload_len = len.checked_sub(4).ok_or_else(|| {
-                    Error::new(ErrorKind::Other, "ICC data tag shortage")
+                    Error::other("ICC data tag shortage")
                 })?;
                 bound_check(data, ptr, 4)?;
                 let data_type = read_u32_be(data, ptr) as usize;

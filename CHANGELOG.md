@@ -7,10 +7,19 @@
 - Update the private `bin-rs` dependency from 0.0.10 to 0.1.0, retaining its
   `util` feature. No downstream API migration is required for this update.
 
+### Fixed
+
+- Return errors before legacy ASCII reads on truncated `sig ` / `desc` tags,
+  undersized declared tag lengths, and short `data` headers. Check the actual
+  shifted range in the legacy extended-description branch before reading it.
+  These malformed inputs could panic after the dependency range correction.
+- Preserve successful decoding, including existing description offsets and
+  version selection. This is not a comprehensive legacy-parser safety audit.
+
 ### Compatibility
 
-- This is a dependency-only maintenance release. ICC source code and public APIs
-  are unchanged; no ICC specification or transform algorithm is redesigned.
+- Public APIs are unchanged; no ICC specification or transform algorithm is
+  redesigned. Narrow legacy input guards accompany the dependency update.
 - The dependency update includes the earlier `bin-rs` ASCII range correction:
   legacy tag text now honors the requested offset and length instead of reading
   the entire buffer. Legacy text output can therefore differ from 0.0.7.

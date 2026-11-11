@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.8 - Unreleased
+
+### Dependencies
+
+- Update the private `bin-rs` dependency from 0.0.10 to 0.1.0, retaining its
+  `util` feature. No downstream API migration is required for this update.
+
+### Compatibility
+
+- This is a dependency-only maintenance release. ICC source code, public APIs,
+  parsing policy, transform algorithms and error behavior are unchanged.
+- The ICC specification and API are still evolving. This dependency migration
+  does not declare ICC API stability or establish an ICC minimum Rust version.
+
 ## 0.0.7 - 2026-10-18
 
 ### Fixed

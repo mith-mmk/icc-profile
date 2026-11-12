@@ -3,10 +3,12 @@ fn main() {
     let args: Vec<_> = env::args().collect();
     let intent: u32 = args.get(4).map(|s| s.parse().expect("intent must be 0..3")).unwrap_or(1);
     assert!(intent <= 3, "intent must be 0..3");
+    let trilinear = match args.get(5).map(String::as_str).unwrap_or("tetrahedral") { "tetrahedral" => false, "trilinear" => true, _ => panic!("interpolation must be tetrahedral or trilinear") };
     let icc_intent = [icc_profile::RenderingIntent::Perceptual, icc_profile::RenderingIntent::RelativeColorimetric, icc_profile::RenderingIntent::Saturation, icc_profile::RenderingIntent::AbsoluteColorimetric][intent as usize];
     let source = fs::read(&args[1]).unwrap();
     let destination = fs::read(&args[2]).unwrap();
     let channels = if &source[16..20] == b"CMYK" { 4 } else { 3 };
+    let output_channels = if &destination[16..20] == b"CMYK" { 4 } else { 3 };
     let n: usize = if channels == 4 { 9 } else { 17 };
     let mut input = Vec::new();
     for mut i in 0usize..n.pow(channels as u32) {
@@ -17,7 +19,7 @@ fn main() {
         }
         input.extend(pixel);
     }
-    let len = input.len() / channels * 3;
+    let len = input.len() / channels * output_channels;
     let mut output = vec![0u16; len];
     match (
         icc_profile::Profile::parse(&source),
@@ -26,7 +28,7 @@ fn main() {
         (Ok(s), Ok(d)) => {
             println!("icc parse=ok");
             match icc_profile::Transform::new(&s, &d, icc_profile::TransformOptions {rendering_intent:icc_intent, ..Default::default()}) {
-                Ok(t) => match t.transform_u16_atomic(&input, &mut output) {
+                Ok(t) => match t.with_algorithm_profile(icc_profile::AlgorithmProfile::default().with_clut_3d(if trilinear { icc_profile::ClutInterpolation3D::Trilinear } else { icc_profile::ClutInterpolation3D::Tetrahedral })).transform_u16_atomic(&input, &mut output) {
                     Ok(()) => {
                         save(&args[3], "icc", &output);
                         println!("icc transform=ok");
@@ -57,7 +59,7 @@ fn main() {
                     moxcms::Layout::Rgb
                 },
                 &d,
-                moxcms::Layout::Rgb,
+                if output_channels == 4 { moxcms::Layout::Rgba } else { moxcms::Layout::Rgb },
                 options,
             ) {
                 Ok(t) => match t.transform(&input, &mut output) {

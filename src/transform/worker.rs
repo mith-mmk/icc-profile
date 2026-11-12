@@ -2,7 +2,7 @@ use super::compile::Transform;
 use super::error::TransformError;
 
 const CHUNK_PIXELS: usize = 64;
-const MAX_CHANNELS: usize = 3;
+const SCRATCH_VALUES: usize = 192;
 
 pub struct TransformWorker {
     pub(super) transform: Transform,
@@ -109,15 +109,17 @@ where
     transform.validate_buffer_lengths(input.len(), output.len())?;
     let input_channels = transform.input_channels();
     let output_channels = transform.output_channels();
-    if input_channels > 4 || output_channels > MAX_CHANNELS {
+    if input_channels > 4 || output_channels > 4 {
         return Err(TransformError::UnsupportedProfileFeature(
-            "worker supports at most four input and three output channels",
+            "worker supports at most four input and output channels",
         ));
     }
     let pixels = input.len() / input_channels;
-    let chunk_pixels = (CHUNK_PIXELS * MAX_CHANNELS / input_channels).min(CHUNK_PIXELS);
-    let mut input_chunk = [0.0f32; CHUNK_PIXELS * MAX_CHANNELS];
-    let mut output_chunk = [0.0f32; CHUNK_PIXELS * MAX_CHANNELS];
+    let chunk_pixels = CHUNK_PIXELS
+        .min(SCRATCH_VALUES / input_channels)
+        .min(SCRATCH_VALUES / output_channels);
+    let mut input_chunk = [0.0f32; SCRATCH_VALUES];
+    let mut output_chunk = [0.0f32; SCRATCH_VALUES];
 
     // Validate every chunk before publishing any output. This retains the
     // old caller-output-on-error contract without an image-sized temporary.

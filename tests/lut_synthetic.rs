@@ -2324,3 +2324,193 @@ fn cmyk_absolute_rejects_unsupported_pairings_and_incomplete_metadata() {
         );
     }
 }
+
+
+// Repository-owned asymmetric PCS-to-CMYK fixtures. C/M/Y/K have different
+// ranges; K depends on two axes and has its own final output curve/table.
+fn cmyk_output_tag(version: u8) -> Vec<u8> {
+    let mut samples = Vec::new();
+    for x in 0..2u16 { for y in 0..2u16 { for z in 0..2u16 {
+        for code in [50000*x, 40000*y, 30000*z, 10000+20000*x*y+10000*z] {
+            samples.extend_from_slice(&code.to_be_bytes());
+        }
+    }}}
+    if version == 2 {
+        let mut tag = vec![0; 52];
+        tag[..4].copy_from_slice(b"mft2");
+        tag[8] = 3; tag[9] = 4; tag[10] = 2;
+        for i in 0..3 { u32_at(&mut tag, 12+i*16, 65536); }
+        tag[48..50].copy_from_slice(&2u16.to_be_bytes());
+        tag[50..52].copy_from_slice(&2u16.to_be_bytes());
+        for _ in 0..3 { tag.extend_from_slice(&[0,0,255,255]); }
+        tag.extend_from_slice(&samples);
+        for end in [65535u16,65535,65535,32768] {
+            tag.extend_from_slice(&0u16.to_be_bytes());
+            tag.extend_from_slice(&end.to_be_bytes());
+        }
+        tag
+    } else {
+        let mut tag = vec![0;32];
+        tag[..4].copy_from_slice(b"mBA "); tag[8]=3; tag[9]=4;
+        let mut b = Vec::new();
+        for _ in 0..3 { b.extend_from_slice(&identity_curve()); }
+        let bo=append_aligned(&mut tag,&b); u32_at(&mut tag,12,bo);
+        let mut clut=vec![0;20]; clut[..3].fill(2); clut[16]=2;
+        clut.extend_from_slice(&samples);
+        let co=append_aligned(&mut tag,&clut); u32_at(&mut tag,24,co);
+        let mut a=Vec::new();
+        for _ in 0..3 { a.extend_from_slice(&identity_curve()); }
+        a.extend_from_slice(&sampled_curve(&[0,32768]));
+        let ao=append_aligned(&mut tag,&a); u32_at(&mut tag,28,ao);
+        tag
+    }
+}
+
+fn cmyk_output_profile(version: u8, tags: Vec<([u8;4],Vec<u8>)>) -> Vec<u8> {
+    let mut bytes=profile(*b"CMYK",tags);
+    bytes[8]=version; bytes[12..16].copy_from_slice(b"prtr"); bytes
+}
+
+fn cmyk_output_expected(p: [f32;3], trilinear: bool) -> [f32;4] {
+    let [x,y,z]=p;
+    let cross=if trilinear {x*y} else {x.min(y)};
+    [50000.0*x/65535.0,40000.0*y/65535.0,30000.0*z/65535.0,
+     (10000.0+20000.0*cross+10000.0*z)/65535.0*(32768.0/65535.0)]
+}
+
+#[test]
+fn cmyk_output_asymmetric_clut_and_fourth_curve_match_analytic_values() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D};
+    for version in [2,4] {
+        let profile=Profile::parse(&cmyk_output_profile(version,vec![(*b"B2A1",cmyk_output_tag(version))])).unwrap();
+        for interpolation in [ClutInterpolation3D::Tetrahedral,ClutInterpolation3D::Trilinear] {
+            let stage=profile.compile(TransformDirection::PcsToDevice,RenderingIntent::RelativeColorimetric,TransformLimits::default()).unwrap()
+                .with_algorithm_profile(AlgorithmProfile::default().with_clut_3d(interpolation));
+            assert_eq!((stage.input_channels(),stage.output_channels()),(3,4));
+            assert_eq!(stage.route_info().selected_tag(),Some(*b"B2A1"));
+            assert!(!stage.route_info().used_fallback());
+            let mut points=vec![[0.2,0.4,0.8],[0.8,0.4,0.2],[0.4,0.8,0.2],[0.4,0.2,0.8],[0.2,0.8,0.4],[0.8,0.2,0.4]];
+            for x in [0.0,1.0] {for y in [0.0,1.0] {for z in [0.0,1.0] {points.push([x,y,z]);}}}
+            for point in points {
+                let physical=point.map(|v|v*(65535.0/32768.0));
+                let mut output=[-0.0;4]; stage.transform_f32_atomic(&physical,&mut output).unwrap();
+                let expected=cmyk_output_expected(point,interpolation==ClutInterpolation3D::Trilinear);
+                for i in 0..4 {assert!((output[i]-expected[i]).abs()<3e-6,"v{version} {interpolation:?} {point:?}: {output:?} != {expected:?}");}
+            }
+            let mut sentinel=[-0.0_f32;4];
+            assert!(stage.transform_f32_atomic(&[0.2,f32::NAN,0.4],&mut sentinel).is_err());
+            assert!(sentinel.iter().all(|v|v.to_bits()==(-0.0_f32).to_bits()));
+            assert!(stage.transform_f32_atomic(&[0.2,0.4],&mut sentinel).is_err());
+            assert!(sentinel.iter().all(|v|v.to_bits()==(-0.0_f32).to_bits()));
+            let mut short=[-0.0_f32;3];
+            assert!(stage.transform_f32_atomic(&[0.2,0.4,0.6],&mut short).is_err());
+            assert!(short.iter().all(|v|v.to_bits()==(-0.0_f32).to_bits()));
+        }
+    }
+}
+
+#[test]
+fn cmyk_output_chunks_workers_and_late_errors_are_atomic() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D};
+    let source=Profile::parse(&matrix_profile_with(256,[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]])).unwrap();
+    for version in [2,4] {
+        let destination=Profile::parse(&cmyk_output_profile(version,vec![(*b"B2A1",cmyk_output_tag(version))])).unwrap();
+        for interpolation in [ClutInterpolation3D::Tetrahedral,ClutInterpolation3D::Trilinear] {
+            let transform=Transform::new(&source,&destination,TransformOptions{clamp:false,..Default::default()}).unwrap()
+                .with_algorithm_profile(AlgorithmProfile::default().with_clut_3d(interpolation));
+            assert_eq!((transform.input_channels(),transform.output_channels()),(3,4));
+            atomic_contract::check_atomic_contract(&transform);
+            for pixels in [0,1,47,48,49,95,96,97,127,128,129] {
+                let input:Vec<_>=(0..pixels*3).map(|i|[0.25,0.5,0.75][i%3]).collect();
+                let mut output=vec![0.0;pixels*4];
+                transform.transform_f32_atomic(&input,&mut output).unwrap();
+                let expected=cmyk_output_expected([0.25,0.5,0.75].map(|v|v*32768.0/65535.0),interpolation==ClutInterpolation3D::Trilinear);
+                for pixel in output.chunks_exact(4) {for i in 0..4 {assert!((pixel[i]-expected[i]).abs()<3e-6);}}
+                let input8:Vec<_>=input.iter().map(|v|(v*255.0).round() as u8).collect();
+                let input16:Vec<_>=input.iter().map(|v|(v*65535.0).round() as u16).collect();
+                let mut out8=vec![0;pixels*4]; let mut out16=vec![0;pixels*4];
+                transform.worker().transform_u8_atomic(&input8,&mut out8).unwrap();
+                transform.worker().transform_u16_atomic(&input16,&mut out16).unwrap();
+                for (bytes,denom) in [(input8.iter().map(|v|*v as f32).collect::<Vec<_>>(),255.0),(input16.iter().map(|v|*v as f32).collect(),65535.0)] {
+                    if pixels==0 {continue;}
+                    let encoded=[bytes[0],bytes[1],bytes[2]].map(|v|v/denom*32768.0/65535.0);
+                    let expected=cmyk_output_expected(encoded,interpolation==ClutInterpolation3D::Trilinear).map(|v|(v*denom).round() as u16);
+                    let actual:Vec<u16>=if denom==255.0 {out8.iter().map(|v|*v as u16).collect()} else {out16.clone()};
+                    for pixel in actual.chunks_exact(4) {for i in 0..4 {assert!((pixel[i] as i32-expected[i] as i32).abs()<=1);}}
+                }
+            }
+            for bad in [f32::NAN,f32::INFINITY,-0.1,1.1] {
+                let mut input=vec![0.5;129*3]; *input.last_mut().unwrap()=bad;
+                let mut output=vec![-0.0_f32;129*4];
+                assert!(transform.transform_f32_atomic(&input,&mut output).is_err());
+                assert!(output.iter().all(|v|v.to_bits()==(-0.0_f32).to_bits()));
+            }
+        }
+    }
+}
+
+#[test]
+fn cmyk_output_limits_selected_tag_and_scope_fail_closed() {
+    let rgb=Profile::parse(&d50_matrix_rgb_profile()).unwrap();
+    for version in [2,4] {
+        let tag=cmyk_output_tag(version);
+        let bytes=cmyk_output_profile(version,vec![(*b"B2A1",tag.clone())]);
+        let destination=Profile::parse(&bytes).unwrap();
+        let compile=|p:&Profile,limits|p.compile(TransformDirection::PcsToDevice,RenderingIntent::RelativeColorimetric,limits);
+        let stage=compile(&destination,TransformLimits::builder().max_clut_entries(32).build().unwrap()).unwrap();
+        assert!(matches!(compile(&destination,TransformLimits::builder().max_clut_entries(31).build().unwrap()),Err(TransformError::ResourceLimit(_))));
+        let compiled=stage.memory_usage().unwrap().compiled_bytes();
+        compile(&destination,TransformLimits::builder().max_compiled_bytes(compiled).build().unwrap()).unwrap();
+        assert!(matches!(compile(&destination,TransformLimits::builder().max_compiled_bytes(compiled-1).build().unwrap()),Err(TransformError::ResourceLimit(_))));
+        for bad_tag in [tag[..tag.len()-1].to_vec(),b"bad!".to_vec()] {
+            let bad=Profile::parse(&cmyk_output_profile(version,vec![(*b"B2A0",tag.clone()),(*b"B2A1",bad_tag)])).unwrap();
+            assert!(compile(&bad,TransformLimits::default()).is_err());
+        }
+        let fallback=Profile::parse(&cmyk_output_profile(version,vec![(*b"B2A0",tag.clone())])).unwrap();
+        assert!(compile(&fallback,TransformLimits::default()).is_err());
+        assert!(Transform::new(&rgb,&fallback,TransformOptions::default()).is_err());
+        for intent in [RenderingIntent::Perceptual,RenderingIntent::Saturation,RenderingIntent::AbsoluteColorimetric] {
+            assert!(destination.compile(TransformDirection::PcsToDevice,intent,TransformLimits::default()).is_err());
+            assert!(Transform::new(&rgb,&destination,TransformOptions{rendering_intent:intent,..Default::default()}).is_err());
+        }
+        for source in [gray_matrix_profile(*b"XYZ "),cmyk_mft2_profile(),cmyk_mab_profile()] {
+            assert!(Transform::new(&Profile::parse(&source).unwrap(),&destination,TransformOptions::default()).is_err());
+        }
+        assert!(Transform::new(&rgb,&destination,TransformOptions{black_point_compensation:true,..Default::default()}).is_err());
+        for class in [*b"mntr",*b"scnr",*b"spac"] {
+            let mut bad=bytes.clone();bad[12..16].copy_from_slice(&class);
+            assert!(compile(&Profile::parse(&bad).unwrap(),TransformLimits::default()).is_err());
+        }
+        if version==4 {
+            let mut missing_a=tag.clone(); u32_at(&mut missing_a,28,0);
+            let bad=Profile::parse(&cmyk_output_profile(version,vec![(*b"B2A1",missing_a)])).unwrap();
+            assert!(compile(&bad,TransformLimits::default()).is_err());
+        }
+    }
+}
+
+
+#[test]
+fn cmyk_output_rgb_lut_source_and_mba_pre_clut_stages_keep_k() {
+    // LUT -> LUT cancels the legacy XYZ encoding scale at the PCS boundary.
+    let source=Profile::parse(&profile(*b"RGB ",vec![(*b"A2B1",identity_mft2())])).unwrap();
+    for version in [2,4] {
+        let mut tag=cmyk_output_tag(version);
+        if version==4 {
+            // mBA execution is B -> matrix -> M -> CLUT -> A. Scale X in
+            // the matrix, then square it in the M curve before interpolation.
+            let mut matrix=matrix_stage();u32_at(&mut matrix,0,32768);
+            let mo=append_aligned(&mut tag,&matrix);u32_at(&mut tag,16,mo);
+            let mut curves=gamma_with_value(512);
+            curves.extend_from_slice(&identity_curve());curves.extend_from_slice(&identity_curve());
+            let mco=append_aligned(&mut tag,&curves);u32_at(&mut tag,20,mco);
+        }
+        let destination=Profile::parse(&cmyk_output_profile(version,vec![(*b"B2A1",tag)])).unwrap();
+        let transform=Transform::new(&source,&destination,TransformOptions{clamp:false,..Default::default()}).unwrap();
+        let input=[0.8,0.4,0.2];let mut output=[0.0;4];
+        transform.transform_f32_atomic(&input,&mut output).unwrap();
+        let encoded=if version==4 {[(input[0]*0.5).powi(2),input[1],input[2]]} else {input};
+        let expected=cmyk_output_expected(encoded,false);
+        for i in 0..4 {assert!((output[i]-expected[i]).abs()<3e-6,"v{version} {output:?} != {expected:?}");}
+    }
+}

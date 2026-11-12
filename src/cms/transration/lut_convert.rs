@@ -24,8 +24,7 @@ pub(crate) fn batch_buffer<T>(
 }
 
 fn shape(
-    input: u8,
-    output: u8,
+    channels: (u8, u8),
     grid: u8,
     matrix: usize,
     entries: (usize, usize),
@@ -33,8 +32,8 @@ fn shape(
     n: usize,
     m: usize,
 ) -> bool {
-    input as usize == n
-        && output as usize == m
+    channels.0 as usize == n
+        && channels.1 as usize == m
         && grid >= 2
         && (n != 3 || matrix >= 9)
         && entries.0 >= 2
@@ -49,8 +48,7 @@ fn shape(
 
 pub(crate) fn valid8(lut: &Mft1, n: usize, m: usize) -> bool {
     shape(
-        lut.input_channels,
-        lut.output_channels,
+        (lut.input_channels, lut.output_channels),
         lut.number_of_clut_grid_points,
         lut.e_params.len(),
         (256, 256),
@@ -65,8 +63,7 @@ pub(crate) fn valid8(lut: &Mft1, n: usize, m: usize) -> bool {
 }
 pub(crate) fn valid16(lut: &Mft2, n: usize, m: usize) -> bool {
     shape(
-        lut.input_channels,
-        lut.output_channels,
+        (lut.input_channels, lut.output_channels),
         lut.number_of_clut_grid_points,
         lut.e_params.len(),
         (
@@ -155,13 +152,13 @@ fn evaluate<T: Copy + Into<f64>, const N: usize, const M: usize>(
                 1.0 - fraction[axis]
             };
         }
-        for channel in 0..M {
-            output[channel] += tables.1[index * M + channel].into() * weight;
+        for (channel, value) in output.iter_mut().enumerate() {
+            *value += tables.1[index * M + channel].into() * weight;
         }
     }
-    for channel in 0..M {
+    for (channel, value) in output.iter_mut().enumerate() {
         let offset = channel * entries.1;
-        output[channel] = table(&tables.2[offset..offset + entries.1], output[channel] / max);
+        *value = table(&tables.2[offset..offset + entries.1], *value / max);
     }
     output
 }

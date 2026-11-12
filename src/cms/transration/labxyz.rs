@@ -1,3 +1,7 @@
+//! Nonempty batches validate whitepoints, inputs and calculated results.
+//! Invalid data and output reservation failures return errors; empty batches
+//! skip evaluation. Finite byte outputs retain legacy rounding and clipping.
+//!
 use super::WhitePoint;
 use std::io::{Error,ErrorKind};
 use std::io::Result;
@@ -6,6 +10,24 @@ pub fn lab_to_xyz(l:f64,a:f64,b:f64) -> (f64,f64,f64) {
     lab_to_xyz_wp(l,a,b,&WhitePoint::d65())
 }
 
+/// Convert finite Lab with a finite, strictly positive XYZ whitepoint.
+///
+/// Returns `InvalidInput` for invalid inputs or nonfinite arithmetic results.
+/// Finite values outside the usual color range are accepted, without clamping.
+/// The legacy tuple-returning [`lab_to_xyz_wp`] remains unchecked.
+pub fn try_lab_to_xyz_wp(l: f64, a: f64, b: f64, wp: &WhitePoint) -> Result<(f64, f64, f64)> {
+    wp.validate()?;
+    if ![l, a, b].iter().all(|value| value.is_finite()) {
+        return Err(Error::new(ErrorKind::InvalidInput, "Nonfinite Lab input"));
+    }
+    let (x, y, z) = lab_to_xyz_wp(l, a, b, wp);
+    if ![x, y, z].iter().all(|value| value.is_finite()) {
+        return Err(Error::new(ErrorKind::InvalidInput, "Nonfinite XYZ result"));
+    }
+    Ok((x, y, z))
+}
+
+/// Legacy unchecked conversion; may produce NaN or infinity.
 pub fn lab_to_xyz_wp(l:f64,a:f64,b:f64,wp: &WhitePoint) -> (f64,f64,f64) {
     let th: f64 = 6.0/29.0;
     let ti = 3.0 * th * th;
@@ -28,14 +50,15 @@ pub fn lab_to_xyz_entries_f64(buf:&[f64],entries: usize,wp: &WhitePoint)  -> Res
     if buf.len() < required {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
     }
-    let mut buffer = Vec::with_capacity(required);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(required).map_err(Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
         let l = buf[ptr];
         let a = buf[ptr + 1];
         let b = buf[ptr + 2];
-        let (x,y,z) = lab_to_xyz_wp(l,a,b,wp);
+        let (x,y,z) = try_lab_to_xyz_wp(l,a,b,wp)?;
 
         buffer.push(x);
         buffer.push(y);
@@ -54,18 +77,19 @@ pub fn lab_to_xyz_entries(buf:&[u8],entries: usize,wp: &WhitePoint)  -> Result<V
     if buf.len() < required {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
     }
-    let mut buffer = Vec::with_capacity(required);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(required).map_err(Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
         let l = buf[ptr]     as f64 / 255.0 * 100.0;
         let a = buf[ptr + 1] as f64 - 128.0;
         let b = buf[ptr + 2] as f64 - 128.0;
-        let (x,y,z) = lab_to_xyz_wp(l,a,b,wp);
+        let (x,y,z) = try_lab_to_xyz_wp(l,a,b,wp)?;
 
-        let x = ((x * 255.0 + 0.5) as i16).clamp(0,255) as u8;
-        let y = ((y * 255.0 + 0.5) as i16).clamp(0,255) as u8;
-        let z = ((z * 255.0 + 0.5) as i16).clamp(0,255) as u8;
+        let x = (x.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        let y = (y.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        let z = (z.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
 
         buffer.push(x);
         buffer.push(y);

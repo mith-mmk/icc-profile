@@ -375,7 +375,7 @@ fn supported_minimal_and_nonzero_wire_fixtures() {
     }
 }
 #[test]
-fn alias_expansion_and_position_overlap_are_rejected() {
+fn alias_expansion_is_bounded_and_identical_positions_are_supported() {
     let mut v = tag("mluc", 16 + 12 * 20 + 100);
     u32be(&mut v, 8, 20);
     u32be(&mut v, 12, 12);
@@ -393,6 +393,8 @@ fn alias_expansion_and_position_overlap_are_rejected() {
         u32be(&mut v, p + 4, payload.len() as u32);
     }
     v.extend(payload);
+    assert!(Data::parse(&v, v.len(), VERSION).is_ok());
+    u32be(&mut v, 20, 32);
     assert!(Data::parse(&v, v.len(), VERSION).is_err());
     let mut v = tag("mAB ", 32);
     v[8] = 1;
@@ -437,4 +439,150 @@ fn present_description_tail_and_five_crd_records_must_be_complete() {
         assert!(Data::parse(&v, n, VERSION).is_err());
     }
     assert!(matches!(parse(&v),Data::CrdInfo(v) if v.len()==5));
+}
+
+#[test]
+fn populated_lut_clut_named_color_and_segmented_curve_fixtures() {
+    for kind in ["mAB ", "mBA "] {
+        for precision in [1, 2] {
+            let mut v = tag(kind, 32);
+            v[8] = 1;
+            v[9] = 1;
+            u32be(&mut v, 12, 32);
+            u32be(&mut v, 24, 48);
+            u32be(&mut v, 28, 72);
+            v.extend(curve());
+            v.resize(72, 0);
+            v[48] = 2;
+            v[64] = precision;
+            v[68] = 1;
+            v[69] = 2;
+            v.extend(curve());
+            match parse(&v) {
+                Data::LutAtoB(v) => {
+                    assert_eq!(v.clut.len(), 2);
+                    assert_eq!(v.a_curves.len(), 1);
+                }
+                Data::LutBtoA(v) => {
+                    assert_eq!(v.clut.len(), 2);
+                    assert_eq!(v.a_curves.len(), 1);
+                }
+                x => panic!("{x:?}"),
+            }
+            v[64] = 3;
+            assert!(Data::parse(&v, v.len(), VERSION).is_err());
+        }
+    }
+    let mut v = tag("mAB ", 32);
+    v[8] = 3;
+    v[9] = 3;
+    u32be(&mut v, 12, 32);
+    u32be(&mut v, 16, 80);
+    u32be(&mut v, 20, 128);
+    for _ in 0..3 {
+        v.extend(curve());
+    }
+    v.resize(128, 0);
+    u32be(&mut v, 80, 0x00010000);
+    for _ in 0..3 {
+        v.extend(curve());
+    }
+    match parse(&v) {
+        Data::LutAtoB(v) => {
+            assert_eq!(v.matrix.len(), 12);
+            assert_eq!(v.matrix[0].int(), 1);
+            assert_eq!(v.m_curves.len(), 3);
+        }
+        x => panic!("{x:?}"),
+    }
+    let mut v = tag("ncl2", 126);
+    u32be(&mut v, 12, 1);
+    u32be(&mut v, 16, 2);
+    v[84..88].copy_from_slice(b"spot");
+    for (p, n) in [(116, 1), (118, 2), (120, 3), (122, 4), (124, 5)] {
+        u16be(&mut v, p, n);
+    }
+    match parse(&v) {
+        Data::NamedColor(v) => {
+            assert_eq!(v.entries[0].pcs, [1, 2, 3]);
+            assert_eq!(v.entries[0].coordinate, [4, 5]);
+        }
+        x => panic!("{x:?}"),
+    }
+    let mut v = tag("curf", 20);
+    u16be(&mut v, 8, 3);
+    u32be(&mut v, 12, 0f32.to_bits());
+    u32be(&mut v, 16, 1f32.to_bits());
+    v.extend(formula());
+    let mut sampled = tag("samf", 20);
+    u32be(&mut sampled, 8, 2);
+    u32be(&mut sampled, 12, 0.25f32.to_bits());
+    u32be(&mut sampled, 16, 0.75f32.to_bits());
+    v.extend(sampled);
+    v.extend(formula());
+    match parse(&v) {
+        Data::OneDimenstionalCurves(v) => {
+            assert_eq!(v.segments, 3);
+            assert_eq!(v.dimensional_curves, vec![vec![0., 1.]]);
+        }
+        x => panic!("{x:?}"),
+    }
+    for n in 0..v.len() {
+        assert!(Data::parse(&v, n, VERSION).is_err());
+    }
+}
+
+#[test]
+fn shared_lut_stages_and_equal_curve_breakpoints_are_supported() {
+    for kind in ["mAB ", "mBA "] {
+        let mut v = tag(kind, 32);
+        v[8] = 1;
+        v[9] = 1;
+        for p in [12, 20, 28] {
+            u32be(&mut v, p, 32);
+        }
+        v.extend(curve());
+        match parse(&v) {
+            Data::LutAtoB(v) => assert_eq!(
+                (v.b_curves.len(), v.m_curves.len(), v.a_curves.len()),
+                (1, 1, 1)
+            ),
+            Data::LutBtoA(v) => assert_eq!(
+                (v.b_curves.len(), v.m_curves.len(), v.a_curves.len()),
+                (1, 1, 1)
+            ),
+            x => panic!("{x:?}"),
+        }
+    }
+    let mut v = tag("curf", 20);
+    u16be(&mut v, 8, 3);
+    for _ in 0..3 {
+        v.extend(formula());
+    }
+    assert!(Data::parse(&v, v.len(), VERSION).is_ok());
+    u32be(&mut v, 12, 1f32.to_bits());
+    assert!(Data::parse(&v, v.len(), VERSION).is_err());
+}
+
+#[test]
+fn final_lut_curve_does_not_require_external_tag_padding() {
+    for kind in ["mAB ", "mBA "] {
+        let mut v = tag(kind, 32);
+        v[8] = 1;
+        v[9] = 1;
+        u32be(&mut v, 12, 32);
+        v.extend(&curve()[..14]);
+        assert_eq!(v.len(), 46);
+        assert!(Data::parse(&v, v.len(), VERSION).is_ok());
+        v.truncate(45);
+        assert!(Data::parse(&v, v.len(), VERSION).is_err());
+        let mut v = tag(kind, 32);
+        v[8] = 2;
+        v[9] = 2;
+        u32be(&mut v, 12, 32);
+        v.extend(curve());
+        v.extend(&curve()[..14]);
+        assert_eq!(v.len(), 62);
+        assert!(Data::parse(&v, v.len(), VERSION).is_ok());
+    }
 }

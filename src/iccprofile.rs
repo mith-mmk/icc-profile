@@ -853,7 +853,9 @@ impl Data {
             ranges.push((offset, offset + size));
         }
         ranges.sort_unstable();
-        // Disallow aliases/overlaps instead of repeatedly expanding one payload.
+        // ICC permits multiple positions to share one element. Validate each
+        // identical range once, retaining the original public position array.
+        ranges.dedup();
         if ranges.windows(2).any(|v| v[0].1 > v[1].0) {
             return Err(Error::other("Overlapping nested element positions"));
         }
@@ -1242,9 +1244,6 @@ impl Data {
                     let start = offsets[index];
                     if start == 0 { return Ok(&[]); }
                     if start < 32 || start >= data.len() || start % 4 != 0 { return Err(Error::other("Invalid LUT offset")); }
-                    if offsets.iter().filter(|&&v| v == start).count() != 1 {
-                        return Err(Error::other("Overlapping LUT sections"));
-                    }
                     let end = offsets.iter().copied().filter(|&v| v > start).min().unwrap_or(data.len());
                     data.get(start..end).ok_or_else(|| Error::other("LUT section outside tag"))
                 };
@@ -1254,11 +1253,12 @@ impl Data {
                     if bytes.is_empty() { return Ok(Vec::new()); }
                     let mut result = Vec::new();
                     let mut pos = 0;
-                    for _ in 0..count {
+                    for index in 0..count {
                         let rest = bytes.get(pos..).ok_or_else(|| Error::other("Curve offset outside LUT"))?;
                         let curve = Self::read_parmetic_curve(rest)?;
-                        pos += (curve.as_size() + 3) & !3;
+                        pos += curve.as_size();
                         bound_check(bytes, 0, pos)?;
+                        if index + 1 < count { pos = (pos + 3) & !3; }
                         result.push(curve);
                     }
                     Ok(result)
@@ -1487,7 +1487,7 @@ impl Data {
                 Self::records(data, ptr, counts, 4)?;
                 let break_points: Vec<f32> = (0..counts).map(|i| read_f32(data, ptr + i * 4, Endian::BigEndian)).collect();
                 ptr += counts * 4;
-                if break_points.iter().any(|v| !v.is_finite()) || break_points.windows(2).any(|v| v[0] >= v[1]) {
+                if break_points.iter().any(|v| !v.is_finite()) || break_points.windows(2).any(|v| v[0] > v[1]) {
                     return Err(Error::other("Invalid curve breakpoints"));
                 }
                 // Legacy output exposes breakpoint data only; segment payloads

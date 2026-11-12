@@ -238,3 +238,31 @@ fn forward_lut8_runs_all_stages_at_byte_endpoints() {
         );
     }
 }
+
+#[test]
+fn forward_c_and_y_axes_are_not_permuted_and_legacy_fallback_is_explicit() {
+    let mut lut = fixture(4, 3);
+    // C varies slowest: L follows only C; a=b=127 encode neutral chroma.
+    // At C=255 this gives L*=100 -> XYZ=D50 -> legacy linear RGB
+    // (255,249,184), using the documented matrix, no production helper oracle.
+    for node in 0..16 {
+        lut.clut_values[node * 3] = if node & 8 != 0 { 255 } else { 0 };
+        lut.clut_values[node * 3 + 1] = 127;
+        lut.clut_values[node * 3 + 2] = 127;
+    }
+    let mut p = profile("A2B0", lut);
+    assert_eq!(
+        try_cmyk_to_rgb_from_profile(255, 0, 0, 0, &p).unwrap(),
+        (255, 249, 184)
+    );
+    assert_eq!(
+        try_cmyk_to_rgb_from_profile(0, 0, 255, 0, &p).unwrap(),
+        (0, 0, 0)
+    );
+    p.tags.clear();
+    assert!(try_cmyk_to_rgb_from_profile(0, 0, 255, 255, &p).is_err());
+    // Exact old fallback calls (c,m,y,k) into a (y,m,c,k) function. Do not
+    // silently change this to the corrected LUT channel convention.
+    assert_eq!(cmyk_to_rgb_from_profile(0, 0, 255, 255, &p), (255, 0, 0));
+    assert_eq!(cmyk_to_rgb_from_profile(255, 0, 0, 255, &p), (0, 0, 255));
+}

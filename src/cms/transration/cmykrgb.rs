@@ -84,7 +84,7 @@ fn checked_xyz_to_rgb(x: f64, y: f64, z: f64) -> Result<(u8, u8, u8)> {
 ///
 /// Supports output-class CMYK profiles with Lab PCS, v2/v4 headers, a D50
 /// header illuminant and an explicit A2B0 LUT8. CMYK byte order is C,M,Y,K.
-/// The inherited bridge uses its historical C/Y permutation, Lab byte coding
+/// The inherited bridge uses historical Lab byte coding
 /// and linear RGB matrix, without sRGB transfer or D50/D65 adaptation. The
 /// header illuminant is not the media white point (`wtpt`). LUT16 is rejected
 /// because its legacy Lab encoding cannot be represented by this byte bridge.
@@ -111,7 +111,8 @@ pub fn try_cmyk_to_rgb_from_profile(
 /// Compatibility-only approximate conversion. Prefer
 /// [`try_cmyk_to_rgb_from_profile`] to observe unsupported/malformed profiles.
 /// Retains the approximate LUT16 route and the historical profile-free fallback
-/// on failure; neither is a color-managed sRGB conversion.
+/// on failure; neither is a color-managed sRGB conversion. The fallback calls
+/// `cmyk_to_rgb(c,m,y,k)` despite that function's legacy `(y,m,c,k)` signature.
 pub fn cmyk_to_rgb_from_profile(
     c: u8,
     m: u8,

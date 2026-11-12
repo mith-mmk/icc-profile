@@ -20,7 +20,7 @@ bridge cannot represent that route faithfully. Invalid LUT8 shapes return
 The inherited color bridge interprets RGB bytes through a linear RGB matrix,
 without the sRGB transfer curve or D50/D65 chromatic adaptation. Its reverse
 Lab encoding uses the historical -127..127 chroma mapping and truncates to
-bytes. Its forward helper retains the historical C/Y permutation and Lab
+bytes. Its forward helper uses C,M,Y,K channel order and historical Lab
 mapping. The header illuminant is used by the legacy Lab equations; it is
 not the media white point, and `wtpt` is not substituted for it. Three-channel
 LUT evaluation retains the legacy matrix stage even for Lab input. Thus
@@ -44,7 +44,9 @@ interpolated CLUT and output tables. Results intentionally change from the
 old nearest-CLUT lookup. LUT16 output is scaled over 0..65535 to bytes rather
 than just discarding its low byte. Metadata outside the supported subset now
 falls back in the tuple API rather than being interpreted as Lab accidentally.
-The separate ICC-free `cmyk_to_rgb(y,m,c,k)` function is unchanged.
+The separate ICC-free `cmyk_to_rgb(y,m,c,k)` function is unchanged. Only the
+old profile-free fallback intentionally calls it as `cmyk_to_rgb(c,m,y,k)`,
+preserving its historical result even when C and Y differ.
 
 Regression tests in `tests/legacy_profile_helpers.rs` use synthetic tables
 with analytically known corner/interior results, independent of production

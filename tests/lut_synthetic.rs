@@ -942,6 +942,7 @@ fn official_v4_mab_fixture_compiles_without_nonfinite_output() {
             .transform_f32(&[0.2, 0.4, 0.8], &mut output)
             .unwrap();
         assert!(output.iter().all(|value| value.is_finite()));
+        atomic_contract::check_atomic_contract(&transform);
     }
 }
 
@@ -1758,4 +1759,16 @@ fn atomic_lut_pair_contract() {
         ..TransformOptions::default()
     }).unwrap();
     atomic_contract::check_atomic_contract(&transform);
+}
+
+#[test]
+#[ignore = "manual release-mode timing; not a CI performance gate"]
+fn benchmark_atomic_lut() {
+    let source = Profile::parse(&profile(*b"RGB ", vec![(*b"A2B0", identity_mft2())])).unwrap();
+    let destination = Profile::parse(&profile(*b"RGB ", vec![(*b"B2A0", identity_mft2())])).unwrap();
+    let transform = Transform::new(&source, &destination, TransformOptions {
+        rendering_intent: RenderingIntent::Perceptual,
+        ..TransformOptions::default()
+    }).unwrap();
+    atomic_contract::benchmark_atomic(&transform, "RGB mft2 LUT pair");
 }

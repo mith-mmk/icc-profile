@@ -661,3 +661,14 @@ fn atomic_rgb_and_cross_channel_matrix_contracts() {
         atomic_contract::check_atomic_contract(&transform);
     }
 }
+
+#[test]
+#[ignore = "manual release-mode timing; not a CI performance gate"]
+fn benchmark_atomic_matrix() {
+    let rgb = Profile::parse(&synthetic_rgb_profile()).unwrap();
+    let gray = Profile::parse(&synthetic_gray_profile()).unwrap();
+    for (source, destination, label) in [(&gray, &gray, "Gray matrix"), (&rgb, &rgb, "RGB matrix")] {
+        let transform = Transform::new(source, destination, TransformOptions::default()).unwrap();
+        atomic_contract::benchmark_atomic(&transform, label);
+    }
+}

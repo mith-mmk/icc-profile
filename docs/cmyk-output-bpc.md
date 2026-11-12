@@ -80,3 +80,10 @@ manufacturer-cms-comparison.md, then run compare.py with a fresh prefix:
 
 Use tetrahedral for the default comparison. Switching the destination to
 PSOcoated_v3.icc demonstrates the explicit unsupported v2 case.
+
+## Perceptual follow-up
+
+The large CMYK code differences were subsequently evaluated in a common
+profile-predicted Lab space, including all pixels of an actual photograph.
+See [perceptual impact and replaceable algorithm controls](cmyk-output-perceptual-impact.md)
+for DeltaE00 distributions, localized dark-violet cases and limitations.

@@ -208,7 +208,7 @@ A2B2 (saturation) for the supported v2 mft2 / v4 mAB display paths. Missing
 A2B1/A2B2 may use A2B0; RouteInfo reports this fallback. A malformed selected
 tag is never replaced by another tag. This executes profile-provided tables,
 not a newly invented gamut mapper or a guarantee of cross-CMS equivalence.
-CMYK output and limited matrix and CMYK-input BPC are described below. Absolute CMYK display has the narrower scope below.
+CMYK output and limited matrix, CMYK-input and CMYK-output BPC are described below. Absolute CMYK display has the narrower scope below.
 Existing non-relative matrix-route media-white requirements remain in force.
 See [intent validation](docs/cmyk-intents.md) for scope and black-box results.
 
@@ -237,5 +237,18 @@ describe endpoint estimates, memory budgets and black-box comparisons.
 An additional [CMYK-input BPC stage](docs/cmyk-input-bpc.md) accepts only v4
 printer CMYK with explicit A2B1 mAB and B2A0 mBA, to an RGB matrix destination.
 It validates black estimates for both interpolation choices and accounts for
-auxiliary compilation peak memory. CMYK-output, v2 CMYK, general LUT and
+auxiliary compilation peak memory. Outside the bounded output extension below, v2 CMYK, general LUT and
 non-relative BPC remain explicit errors; no full ISO conformance is claimed.
+
+
+### Bounded CMYK output black-point compensation
+
+Relative BPC also supports RGB XYZ matrix sources to v4 printer CMYK destinations
+with explicit B2A1, A2B1 and B2A0 routes and D50 PCS headers. The destination
+estimate uses a 256-sample neutral round trip, midrange test and quadratic shadow
+fit from the public ICC-approved 2013 committee draft, not the media-black tag.
+Invalid or degenerate ramps are explicitly unsupported in this bounded subset;
+this is not a claim of final ISO 18619 conformance. Auxiliary LUTs and fixed ramp
+storage count toward construction admission and are discarded after estimation.
+`cmyk_output_bpc_diagnostics()` exposes the selected interpolation's immutable
+estimate. See [CMYK output BPC](docs/cmyk-output-bpc.md) for scope and validation.

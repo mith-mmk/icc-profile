@@ -26,11 +26,11 @@ impl WhitePoint {
     }
 
     pub fn d50() -> Self {
-        Self{x:0.9568, y:1.0000, z:0.9214}
+        Self{x:0.9642, y:1.0000, z:0.8251}
     }
 
     pub fn d55() -> Self {
-        Self{x:0.9642, y:1.0000, z:0.8251}
+        Self{x:0.9568, y:1.0000, z:0.9214}
     }
 
     pub fn d65() -> Self {
@@ -44,8 +44,9 @@ impl WhitePoint {
         }
     }
 
+    /// ICC PCS D50 reference white (distinct from the rounded CIE D50 above).
     pub fn icc() -> Self {
-        Self{x:1.0371292263, y:1.000, z:0.8249}
+        Self{x:0.9642, y:1.000, z:0.8249}
     }
 
     pub fn from_profile(decoded:&DecodedICCProfile) -> Self {

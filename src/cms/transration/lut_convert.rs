@@ -1,502 +1,242 @@
-use crate::iccprofile::ICCNumber;
-use crate::{Mft1,Mft2};
+//! Legacy LUT helpers. Inputs retain their encoded byte domain and LUT16 outputs
+//! retain the raw 0..65535 domain. Invalid public LUT payloads panic explicitly;
+//! batch wrappers report InvalidInput instead. Three-channel helpers retain their
+//! historical matrix stage (these APIs have no PCS metadata).
+use crate::iccprofile::{ICCNumber, S15Fixed16Number};
+use crate::{Mft1, Mft2};
+use std::io::{Error, ErrorKind, Result};
 
-pub fn d4_to_d3_lut16(c1:u8,c2:u8,c3:u8,c4:u8,lut:&Mft2) -> (f64,f64,f64) {
-    let grid_points = lut.number_of_clut_grid_points as usize;
-
-    let delta= 65535 / (lut.input_table_enteries as usize) ;
-    let c1 = (c1 as usize * 256 + c1 as usize) / lut.input_table_enteries as usize;
-    let c1_delta= (c1 as usize * 256 + c1 as usize) % lut.input_table_enteries as usize;
-    let c2 = (c2 as usize * 256 + c2 as usize) / lut.input_table_enteries as usize;
-    let c2_delta= (c2 as usize * 256 + c2 as usize) % lut.input_table_enteries as usize;
-    let c3 = (c3 as usize * 256 + c3 as usize) / lut.input_table_enteries as usize;
-    let c3_delta= (c3 as usize * 256 + c3 as usize) % lut.input_table_enteries as usize;
-    let c4 = (c4 as usize * 256 + c4 as usize) / lut.input_table_enteries as usize;
-    let c4_delta= (c4 as usize * 256 + c4 as usize) % lut.input_table_enteries as usize;
-
-    let c11 = lut.input_table [c1 as usize];
-    let c21 = lut.input_table [c2 as usize + lut.input_table_enteries as usize];
-    let c31 = lut.input_table [c3 as usize + lut.input_table_enteries as usize * 2];
-    let c41 = lut.input_table [c4 as usize + lut.input_table_enteries as usize * 3];
-
-    let c12 = if c1 < lut.input_table_enteries as usize - 1 {lut.input_table [c1 as usize + 1]} else {c11};
-    let c22 = if c2 < lut.input_table_enteries as usize - 1 {lut.input_table [c2 as usize + 1 + lut.input_table_enteries as usize]} else {c21};
-    let c32 = if c3 < lut.input_table_enteries as usize - 1 {lut.input_table [c3 as usize + 1 + lut.input_table_enteries as usize * 2]} else {c31};
-    let c42 = if c4 < lut.input_table_enteries as usize - 1 {lut.input_table [c4 as usize + 1 + lut.input_table_enteries as usize * 3]} else {c41};
-
-    let c1_delta= c1_delta as f64 / delta as f64;
-    let c2_delta= c2_delta as f64 / delta as f64;
-    let c3_delta= c3_delta as f64 / delta as f64;
-    let c4_delta= c4_delta as f64 / delta as f64;
-
-    let c1 = c11 as isize + ((c12 as isize - c11 as isize) as f64 * c1_delta) as isize;
-    let c2 = c21 as isize + ((c22 as isize - c21 as isize) as f64 * c2_delta) as isize;
-    let c3 = c31 as isize + ((c32 as isize - c31 as isize) as f64 * c3_delta) as isize;
-    let c4 = c41 as isize + ((c42 as isize - c41 as isize) as f64 * c4_delta) as isize;
-
-    let c1_grid = ((c1 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c2_grid = ((c2 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c3_grid = ((c3 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c4_grid = ((c4 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-
-    let c1_grid_delta= ((c1 as f64 / 65536.0) * grid_points as f64) - c1_grid as f64;
-    let c2_grid_delta= ((c2 as f64 / 65536.0) * grid_points as f64) - c2_grid as f64;
-    let c3_grid_delta= ((c3 as f64 / 65536.0) * grid_points as f64) - c3_grid as f64;
-    let c4_grid_delta= ((c4 as f64 / 65536.0) * grid_points as f64) - c4_grid as f64;
-    let grid_delta= c1_grid_delta* c2_grid_delta* c3_grid_delta* c4_grid_delta;
-
-    let grid = c1_grid * grid_points.pow(3) + c2_grid * grid_points.pow(2)  + c3_grid * grid_points + c4_grid;
-    let grid = grid * lut.output_channels as usize;
-    let c1_grid2 = if c1_grid < grid_points - 1 {c1_grid + 1} else {c1_grid}; 
-    let c2_grid2 = if c2_grid < grid_points - 1 {c2_grid + 1} else {c2_grid}; 
-    let c3_grid2 = if c3_grid < grid_points - 1 {c3_grid + 1} else {c3_grid}; 
-    let c4_grid2 = if c4_grid < grid_points - 1 {c4_grid + 1} else {c4_grid}; 
-    let grid2 = c1_grid2 * grid_points.pow(3) + c2_grid2 * grid_points.pow(2)  + c3_grid2 * grid_points + c4_grid2;
-    let grid2 = grid2 * lut.output_channels as usize;
- 
-    let d1 = lut.clut_values[grid]   as f64 * (1.0  -grid_delta) + lut.clut_values[grid2]   as f64 * grid_delta;
-    let d2 = lut.clut_values[grid+1] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+1] as f64 * grid_delta;
-    let d3 = lut.clut_values[grid+2] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+2] as f64 * grid_delta;
-    
-    let dev = 65535.0 / (lut.output_table_enteries as f64 -1.0);
-
-    let od1 = (d1 / dev) as usize;
-    let od2 = (d2 / dev) as usize;
-    let od3 = (d3 / dev) as usize;
-
-    let od1_delta= d1 / dev - od1 as f64;
-    let od2_delta= d2 / dev - od2 as f64;
-    let od3_delta= d3 / dev - od3 as f64;
-
-    let d11 = lut.output_table [od1 as usize];
-    let d21 = lut.output_table [od2 as usize + lut.output_table_enteries as usize];
-    let d31 = lut.output_table [od3 as usize + lut.output_table_enteries as usize * 2];
-    let d12 = if d11 < lut.output_table_enteries - 1 {lut.output_table[od1 as usize + 1]} else {d11};
-    let d22 = if d21 < lut.output_table_enteries - 1 {lut.output_table[od2 as usize + 1 + lut.output_table_enteries as usize]} else {d21};
-    let d32 = if d31 < lut.output_table_enteries - 1 {lut.output_table[od3 as usize + 1 + lut.output_table_enteries as usize * 2]} else {d31};
-
-    let d1 = d11 as f64 * (1.0 - od1_delta) + d12 as f64 * od1_delta;
-    let d2 = d21 as f64 * (1.0 - od2_delta) + d22 as f64 * od2_delta;
-    let d3 = d31 as f64 * (1.0 - od3_delta) + d32 as f64 * od3_delta;
-
-    (d1,d2,d3)
+pub(crate) fn batch_buffer<T>(
+    len: usize,
+    entries: usize,
+    inputs: usize,
+    outputs: usize,
+) -> Result<Vec<T>> {
+    let invalid = || Error::new(ErrorKind::InvalidInput, "Invalid batch length");
+    let needed = entries.checked_mul(inputs).ok_or_else(invalid)?;
+    let capacity = entries.checked_mul(outputs).ok_or_else(invalid)?;
+    if len < needed {
+        return Err(invalid());
+    }
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(capacity).map_err(|_| invalid())?;
+    Ok(buffer)
 }
 
-
-pub fn d4_to_d3_lut8(c:u8,m:u8,y:u8,k:u8,lut:&Mft1) -> (u8,u8,u8) {
-    let grid_points = lut.number_of_clut_grid_points as usize;
-
-    let c = lut.input_table [c as usize];
-    let m = lut.input_table [m as usize + 256];
-    let y = lut.input_table [y as usize + 256 * 2];
-    let k = lut.input_table [k as usize + 256 * 3];
-
-    let c_grid = ((y as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let m_grid = ((m as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let y_grid = ((c as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let k_grid = ((k as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c_grid_delta = ((y as f64 / 255.0) * grid_points as f64) - c_grid as f64;
-    let m_grid_delta = ((m as f64 / 255.0) * grid_points as f64) - m_grid as f64;
-    let y_grid_delta = ((c as f64 / 255.0) * grid_points as f64) - y_grid as f64;
-    let k_grid_delta = ((k as f64 / 255.0) * grid_points as f64) - k_grid as f64;
-    let grid_delta = c_grid_delta * m_grid_delta * y_grid_delta * k_grid_delta;
-
-    let grid = c_grid * grid_points.pow(3) + m_grid * grid_points.pow(2)  + y_grid * grid_points + k_grid;
-    let grid = grid * lut.output_channels as usize;
-    let c_grid2 = if c_grid < grid_points - 1 {c_grid + 1} else {c_grid}; 
-    let m_grid2 = if m_grid < grid_points - 1 {m_grid + 1} else {m_grid}; 
-    let y_grid2 = if y_grid < grid_points - 1 {y_grid + 1} else {y_grid}; 
-    let k_grid2 = if k_grid < grid_points - 1 {k_grid + 1} else {k_grid}; 
-    let grid2 = c_grid2 * grid_points.pow(3) + m_grid2 * grid_points.pow(2)  + y_grid2 * grid_points + k_grid2;
-    let grid2 = grid2 * lut.output_channels as usize;
- 
-    let d1 = lut.clut_values[grid]   as f64 * (1.0  -grid_delta) + lut.clut_values[grid2]   as f64 * grid_delta;
-    let d2 = lut.clut_values[grid+1] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+1] as f64 * grid_delta;
-    let d3 = lut.clut_values[grid+2] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+2] as f64 * grid_delta;
-    let d1 = lut.output_table[(d1 as usize).clamp(0,255)];
-    let d2 = lut.output_table[(d2 as usize).clamp(0,255) + 256];
-    let d3 = lut.output_table[(d3 as usize).clamp(0,255) + 512];
-
-    (d1,d2,d3)
+fn shape(
+    input: u8,
+    output: u8,
+    grid: u8,
+    matrix: usize,
+    entries: (usize, usize),
+    lengths: (usize, usize, usize),
+    n: usize,
+    m: usize,
+) -> bool {
+    input as usize == n
+        && output as usize == m
+        && grid >= 2
+        && (n != 3 || matrix >= 9)
+        && entries.0 >= 2
+        && entries.1 >= 2
+        && n.checked_mul(entries.0).is_some_and(|v| lengths.0 >= v)
+        && (grid as usize)
+            .checked_pow(n as u32)
+            .and_then(|v| v.checked_mul(m))
+            .is_some_and(|v| lengths.1 >= v)
+        && m.checked_mul(entries.1).is_some_and(|v| lengths.2 >= v)
 }
 
-
-pub fn d3_to_d4_lut16(c1:u8,c2:u8,c3:u8,lut:&Mft2) -> (f64,f64,f64,f64) {
-    let c1 = c1 as f64;
-    let c2 = c2 as f64;
-    let c3 = c3 as f64;
-
-    let e = &lut.e_params;
-
-    let c1_1 = e[0].as_f64() * c1 + e[1].as_f64() * c2 + e[2].as_f64() * c3;
-    let c2_1 = e[3].as_f64() * c1 + e[4].as_f64() * c2 + e[5].as_f64() * c3;
-    let c3_1 = e[6].as_f64() * c1 + e[7].as_f64() * c2 + e[8].as_f64() * c3;
-
-    let (c1,c2,c3) = (c1_1,c2_1,c3_1);
-
-
-    let grid_points = lut.number_of_clut_grid_points as usize;
-
-    let delta= 65535 / (lut.input_table_enteries as usize) ;
-    let c1 = (c1 as usize * 256 + c1 as usize) / lut.input_table_enteries as usize;
-    let c1_delta= (c1 as usize * 256 + c1 as usize) % lut.input_table_enteries as usize;
-    let c2 = (c2 as usize * 256 + c2 as usize) / lut.input_table_enteries as usize;
-    let c2_delta= (c2 as usize * 256 + c2 as usize) % lut.input_table_enteries as usize;
-    let c3 = (c3 as usize * 256 + c3 as usize) / lut.input_table_enteries as usize;
-    let c3_delta= (c3 as usize * 256 + c3 as usize) % lut.input_table_enteries as usize;
-
-    let c11 = lut.input_table [c1 as usize];
-    let c21 = lut.input_table [c2 as usize + lut.input_table_enteries as usize];
-    let c31 = lut.input_table [c3 as usize + lut.input_table_enteries as usize * 2];
-
-    let c12 = if c1 < lut.input_table_enteries as usize - 1 {lut.input_table [c1 as usize + 1]} else {c11};
-    let c22 = if c2 < lut.input_table_enteries as usize - 1 {lut.input_table [c2 as usize + 1 + lut.input_table_enteries as usize]} else {c21};
-    let c32 = if c3 < lut.input_table_enteries as usize - 1 {lut.input_table [c3 as usize + 1 + lut.input_table_enteries as usize * 2]} else {c31};
-
-    let c1_delta= c1_delta as f64 / delta as f64;
-    let c2_delta= c2_delta as f64 / delta as f64;
-    let c3_delta= c3_delta as f64 / delta as f64;
-
-    let c1 = c11 as isize + ((c12 as isize - c11 as isize) as f64 * c1_delta) as isize;
-    let c2 = c21 as isize + ((c22 as isize - c21 as isize) as f64 * c2_delta) as isize;
-    let c3 = c31 as isize + ((c32 as isize - c31 as isize) as f64 * c3_delta) as isize;
-
-    let c1_grid = ((c1 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c2_grid = ((c2 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c3_grid = ((c3 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-
-    let c1_grid_delta= ((c1 as f64 / 65536.0) * grid_points as f64) - c1_grid as f64;
-    let c2_grid_delta= ((c2 as f64 / 65536.0) * grid_points as f64) - c2_grid as f64;
-    let c3_grid_delta= ((c3 as f64 / 65536.0) * grid_points as f64) - c3_grid as f64;
-    let grid_delta= c1_grid_delta* c2_grid_delta* c3_grid_delta;
-
-    let grid = c1_grid * grid_points.pow(2) + c2_grid + c3_grid;
-    let grid = grid * lut.output_channels as usize;
-    let c1_grid2 = if c1_grid < grid_points - 1 {c1_grid + 1} else {c1_grid}; 
-    let c2_grid2 = if c2_grid < grid_points - 1 {c2_grid + 1} else {c2_grid}; 
-    let c3_grid2 = if c3_grid < grid_points - 1 {c3_grid + 1} else {c3_grid}; 
-    let grid2 = c1_grid2 * grid_points.pow(2) + c2_grid2 * grid_points + c3_grid2;
-    let grid2 = grid2 * lut.output_channels as usize;
- 
-    let d1 = lut.clut_values[grid]   as f64 * (1.0  -grid_delta) + lut.clut_values[grid2]   as f64 * grid_delta;
-    let d2 = lut.clut_values[grid+1] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+1] as f64 * grid_delta;
-    let d3 = lut.clut_values[grid+2] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+2] as f64 * grid_delta;
-    let d4 = lut.clut_values[grid+3] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+3] as f64 * grid_delta;
-    
-    let dev = 65535.0 / (lut.output_table_enteries as f64 -1.0);
-
-    let od1 = (d1 / dev) as usize;
-    let od2 = (d2 / dev) as usize;
-    let od3 = (d3 / dev) as usize;
-    let od4 = (d4 / dev) as usize;
-
-    let od1_delta= d1 / dev - od1 as f64;
-    let od2_delta= d2 / dev - od2 as f64;
-    let od3_delta= d3 / dev - od3 as f64;
-    let od4_delta= d4 / dev - od4 as f64;
-
-    let d11 = lut.output_table [od1 as usize];
-    let d21 = lut.output_table [od2 as usize + lut.output_table_enteries as usize];
-    let d31 = lut.output_table [od3 as usize + lut.output_table_enteries as usize * 2];
-    let d41 = lut.output_table [od3 as usize + lut.output_table_enteries as usize * 3];
-
-    let d12 = if d11 < lut.output_table_enteries - 1 {lut.output_table[od1 as usize + 1]} else {d11};
-    let d22 = if d21 < lut.output_table_enteries - 1 {lut.output_table[od2 as usize + 1 + lut.output_table_enteries as usize]} else {d21};
-    let d32 = if d31 < lut.output_table_enteries - 1 {lut.output_table[od3 as usize + 1 + lut.output_table_enteries as usize * 2]} else {d31};
-    let d42 = if d41 < lut.output_table_enteries - 1 {lut.output_table[od4 as usize + 1 + lut.output_table_enteries as usize * 3]} else {d41};
-
-    let d1 = d11 as f64 * (1.0 - od1_delta) + d12 as f64 * od1_delta;
-    let d2 = d21 as f64 * (1.0 - od2_delta) + d22 as f64 * od2_delta;
-    let d3 = d31 as f64 * (1.0 - od3_delta) + d32 as f64 * od3_delta;
-    let d4 = d41 as f64 * (1.0 - od4_delta) + d42 as f64 * od4_delta;
-
-    (d1,d2,d3,d4)
+pub(crate) fn valid8(lut: &Mft1, n: usize, m: usize) -> bool {
+    shape(
+        lut.input_channels,
+        lut.output_channels,
+        lut.number_of_clut_grid_points,
+        lut.e_params.len(),
+        (256, 256),
+        (
+            lut.input_table.len(),
+            lut.clut_values.len(),
+            lut.output_table.len(),
+        ),
+        n,
+        m,
+    )
+}
+pub(crate) fn valid16(lut: &Mft2, n: usize, m: usize) -> bool {
+    shape(
+        lut.input_channels,
+        lut.output_channels,
+        lut.number_of_clut_grid_points,
+        lut.e_params.len(),
+        (
+            lut.input_table_enteries as usize,
+            lut.output_table_enteries as usize,
+        ),
+        (
+            lut.input_table.len(),
+            lut.clut_values.len(),
+            lut.output_table.len(),
+        ),
+        n,
+        m,
+    )
 }
 
-pub fn d3_to_d3_lut16(c1:u8,c2:u8,c3:u8,lut:&Mft2) -> (f64,f64,f64) {
-    let c1 = c1 as f64;
-    let c2 = c2 as f64;
-    let c3 = c3 as f64;
-
-    let e = &lut.e_params;
-
-    let c1_1 = e[0].as_f64() * c1 + e[1].as_f64() * c2 + e[2].as_f64() * c3;
-    let c2_1 = e[3].as_f64() * c1 + e[4].as_f64() * c2 + e[5].as_f64() * c3;
-    let c3_1 = e[6].as_f64() * c1 + e[7].as_f64() * c2 + e[8].as_f64() * c3;
-
-    let (c1,c2,c3) = (c1_1,c2_1,c3_1);
-
-
-    let grid_points = lut.number_of_clut_grid_points as usize;
-
-    let delta= 65535 / (lut.input_table_enteries as usize) ;
-    let c1 = (c1 as usize * 256 + c1 as usize) / lut.input_table_enteries as usize;
-    let c1_delta= (c1 as usize * 256 + c1 as usize) % lut.input_table_enteries as usize;
-    let c2 = (c2 as usize * 256 + c2 as usize) / lut.input_table_enteries as usize;
-    let c2_delta= (c2 as usize * 256 + c2 as usize) % lut.input_table_enteries as usize;
-    let c3 = (c3 as usize * 256 + c3 as usize) / lut.input_table_enteries as usize;
-    let c3_delta= (c3 as usize * 256 + c3 as usize) % lut.input_table_enteries as usize;
-
-    let c11 = lut.input_table [c1 as usize];
-    let c21 = lut.input_table [c2 as usize + lut.input_table_enteries as usize];
-    let c31 = lut.input_table [c3 as usize + lut.input_table_enteries as usize * 2];
-
-    let c12 = if c1 < lut.input_table_enteries as usize - 1 {lut.input_table [c1 as usize + 1]} else {c11};
-    let c22 = if c2 < lut.input_table_enteries as usize - 1 {lut.input_table [c2 as usize + 1 + lut.input_table_enteries as usize]} else {c21};
-    let c32 = if c3 < lut.input_table_enteries as usize - 1 {lut.input_table [c3 as usize + 1 + lut.input_table_enteries as usize * 2]} else {c31};
-
-    let c1_delta= c1_delta as f64 / delta as f64;
-    let c2_delta= c2_delta as f64 / delta as f64;
-    let c3_delta= c3_delta as f64 / delta as f64;
-
-    let c1 = c11 as isize + ((c12 as isize - c11 as isize) as f64 * c1_delta) as isize;
-    let c2 = c21 as isize + ((c22 as isize - c21 as isize) as f64 * c2_delta) as isize;
-    let c3 = c31 as isize + ((c32 as isize - c31 as isize) as f64 * c3_delta) as isize;
-
-    let c1_grid = ((c1 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c2_grid = ((c2 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c3_grid = ((c3 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-
-    let c1_grid_delta= ((c1 as f64 / 65536.0) * grid_points as f64) - c1_grid as f64;
-    let c2_grid_delta= ((c2 as f64 / 65536.0) * grid_points as f64) - c2_grid as f64;
-    let c3_grid_delta= ((c3 as f64 / 65536.0) * grid_points as f64) - c3_grid as f64;
-    let grid_delta= c1_grid_delta* c2_grid_delta* c3_grid_delta;
-
-    let grid = c1_grid * grid_points.pow(2) + c2_grid + c3_grid;
-    let grid = grid * lut.output_channels as usize;
-    let c1_grid2 = if c1_grid < grid_points - 1 {c1_grid + 1} else {c1_grid}; 
-    let c2_grid2 = if c2_grid < grid_points - 1 {c2_grid + 1} else {c2_grid}; 
-    let c3_grid2 = if c3_grid < grid_points - 1 {c3_grid + 1} else {c3_grid}; 
-    let grid2 = c1_grid2 * grid_points.pow(2) + c2_grid2 * grid_points + c3_grid2;
-    let grid2 = grid2 * lut.output_channels as usize;
- 
-    let d1 = lut.clut_values[grid]   as f64 * (1.0  -grid_delta) + lut.clut_values[grid2]   as f64 * grid_delta;
-    let d2 = lut.clut_values[grid+1] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+1] as f64 * grid_delta;
-    let d3 = lut.clut_values[grid+2] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+2] as f64 * grid_delta;
-    
-    let dev = 65535.0 / (lut.output_table_enteries as f64 -1.0);
-
-    let od1 = (d1 / dev) as usize;
-    let od2 = (d2 / dev) as usize;
-    let od3 = (d3 / dev) as usize;
- 
-    let od1_delta= d1 / dev - od1 as f64;
-    let od2_delta= d2 / dev - od2 as f64;
-    let od3_delta= d3 / dev - od3 as f64;
-
-    let d11 = lut.output_table [od1 as usize];
-    let d21 = lut.output_table [od2 as usize + lut.output_table_enteries as usize];
-    let d31 = lut.output_table [od3 as usize + lut.output_table_enteries as usize * 2];
-
-    let d12 = if d11 < lut.output_table_enteries - 1 {lut.output_table[od1 as usize + 1]} else {d11};
-    let d22 = if d21 < lut.output_table_enteries - 1 {lut.output_table[od2 as usize + 1 + lut.output_table_enteries as usize]} else {d21};
-    let d32 = if d31 < lut.output_table_enteries - 1 {lut.output_table[od3 as usize + 1 + lut.output_table_enteries as usize * 2]} else {d31};
-
-    let d1 = d11 as f64 * (1.0 - od1_delta) + d12 as f64 * od1_delta;
-    let d2 = d21 as f64 * (1.0 - od2_delta) + d22 as f64 * od2_delta;
-    let d3 = d31 as f64 * (1.0 - od3_delta) + d32 as f64 * od3_delta;
-
-    (d1,d2,d3)
+pub(crate) fn check8(lut: &Mft1, n: usize, m: usize) -> Result<()> {
+    if valid8(lut, n, m) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Invalid legacy LUT8 payload",
+        ))
+    }
+}
+pub(crate) fn check16(lut: &Mft2, n: usize, m: usize) -> Result<()> {
+    if valid16(lut, n, m) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Invalid legacy LUT16 payload",
+        ))
+    }
 }
 
-pub fn d3_to_d1_lut16(c1:u8,c2:u8,c3:u8,lut:&Mft2) -> f64 {
-    let c1 = c1 as f64;
-    let c2 = c2 as f64;
-    let c3 = c3 as f64;
-
-    let e = &lut.e_params;
-
-    let c1_1 = e[0].as_f64() * c1 + e[1].as_f64() * c2 + e[2].as_f64() * c3;
-    let c2_1 = e[3].as_f64() * c1 + e[4].as_f64() * c2 + e[5].as_f64() * c3;
-    let c3_1 = e[6].as_f64() * c1 + e[7].as_f64() * c2 + e[8].as_f64() * c3;
-
-    let (c1,c2,c3) = (c1_1,c2_1,c3_1);
-
-
-    let grid_points = lut.number_of_clut_grid_points as usize;
-
-    let delta= 65535 / (lut.input_table_enteries as usize) ;
-    let c1 = (c1 as usize * 256 + c1 as usize) / lut.input_table_enteries as usize;
-    let c1_delta= (c1 as usize * 256 + c1 as usize) % lut.input_table_enteries as usize;
-    let c2 = (c2 as usize * 256 + c2 as usize) / lut.input_table_enteries as usize;
-    let c2_delta= (c2 as usize * 256 + c2 as usize) % lut.input_table_enteries as usize;
-    let c3 = (c3 as usize * 256 + c3 as usize) / lut.input_table_enteries as usize;
-    let c3_delta= (c3 as usize * 256 + c3 as usize) % lut.input_table_enteries as usize;
-
-    let c11 = lut.input_table [c1 as usize];
-    let c21 = lut.input_table [c2 as usize + lut.input_table_enteries as usize];
-    let c31 = lut.input_table [c3 as usize + lut.input_table_enteries as usize * 2];
-
-    let c12 = if c1 < lut.input_table_enteries as usize - 1 {lut.input_table [c1 as usize + 1]} else {c11};
-    let c22 = if c2 < lut.input_table_enteries as usize - 1 {lut.input_table [c2 as usize + 1 + lut.input_table_enteries as usize]} else {c21};
-    let c32 = if c3 < lut.input_table_enteries as usize - 1 {lut.input_table [c3 as usize + 1 + lut.input_table_enteries as usize * 2]} else {c31};
-
-    let c1_delta= c1_delta as f64 / delta as f64;
-    let c2_delta= c2_delta as f64 / delta as f64;
-    let c3_delta= c3_delta as f64 / delta as f64;
-
-    let c1 = c11 as isize + ((c12 as isize - c11 as isize) as f64 * c1_delta) as isize;
-    let c2 = c21 as isize + ((c22 as isize - c21 as isize) as f64 * c2_delta) as isize;
-    let c3 = c31 as isize + ((c32 as isize - c31 as isize) as f64 * c3_delta) as isize;
-
-    let c1_grid = ((c1 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c2_grid = ((c2 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-    let c3_grid = ((c3 as f64 / 65536.0) * grid_points as f64).floor() as usize;
-
-    let c1_grid_delta= ((c1 as f64 / 65536.0) * grid_points as f64) - c1_grid as f64;
-    let c2_grid_delta= ((c2 as f64 / 65536.0) * grid_points as f64) - c2_grid as f64;
-    let c3_grid_delta= ((c3 as f64 / 65536.0) * grid_points as f64) - c3_grid as f64;
-    let grid_delta= c1_grid_delta* c2_grid_delta* c3_grid_delta;
-
-    let grid = c1_grid * grid_points.pow(2) + c2_grid + c3_grid;
-    let grid = grid * lut.output_channels as usize;
-    let c1_grid2 = if c1_grid < grid_points - 1 {c1_grid + 1} else {c1_grid}; 
-    let c2_grid2 = if c2_grid < grid_points - 1 {c2_grid + 1} else {c2_grid}; 
-    let c3_grid2 = if c3_grid < grid_points - 1 {c3_grid + 1} else {c3_grid}; 
-    let grid2 = c1_grid2 * grid_points.pow(2) + c2_grid2 * grid_points + c3_grid2;
-    let grid2 = grid2 * lut.output_channels as usize;
- 
-    let d1 = lut.clut_values[grid]   as f64 * (1.0  -grid_delta) + lut.clut_values[grid2]   as f64 * grid_delta;
-    
-    let dev = 65535.0 / (lut.output_table_enteries as f64 -1.0);
-
-    let od1 = (d1 / dev) as usize;
-
-    let od1_delta= d1 / dev - od1 as f64;
-
-    let d11 = lut.output_table [od1 as usize];
-
-    let d12 = if d11 < lut.output_table_enteries - 1 {lut.output_table[od1 as usize + 1]} else {d11};
-
-    let d1 = d11 as f64 * (1.0 - od1_delta) + d12 as f64 * od1_delta;
-
-    d1
+fn table<T: Copy + Into<f64>>(values: &[T], coordinate: f64) -> f64 {
+    let x = coordinate.clamp(0.0, 1.0) * (values.len() - 1) as f64;
+    let lo = x as usize;
+    let hi = (lo + 1).min(values.len() - 1);
+    let fraction = x - lo as f64;
+    values[lo].into() * (1.0 - fraction) + values[hi].into() * fraction
 }
 
-pub fn d3_to_d4_lut8(c1:u8,c2:u8,c3:u8,lut:&Mft1) -> (u8,u8,u8,u8) {
-    let grid_points = lut.number_of_clut_grid_points as usize;
-    let e = &lut.e_params;
-
-    let c1_1 = e[0].as_f64() * c1 as f64 + e[1].as_f64() * c2 as f64 + e[2].as_f64() * c3 as f64;
-    let c2_1 = e[3].as_f64() * c1 as f64 + e[4].as_f64() * c2 as f64 + e[5].as_f64() * c3 as f64;
-    let c3_1 = e[6].as_f64() * c1 as f64 + e[7].as_f64() * c2 as f64 + e[8].as_f64() * c3 as f64;
-
-    let c1 = c1_1 as usize;
-    let c2 = c2_1 as usize;
-    let c3 = c3_1 as usize;
-
-    let c1 = lut.input_table [c1 as usize];
-    let c2 = lut.input_table [c2 as usize + 256];
-    let c3 = lut.input_table [c3 as usize + 256 * 2];
-
-    let c1_grid = ((c1 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c2_grid = ((c2 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c3_grid = ((c3 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c1_grid_delta = ((c1 as f64 / 255.0) * grid_points as f64) - c1_grid as f64;
-    let c2_grid_delta = ((c2 as f64 / 255.0) * grid_points as f64) - c2_grid as f64;
-    let c3_grid_delta = ((c3 as f64 / 255.0) * grid_points as f64) - c3_grid as f64;
-    let grid_delta = c1_grid_delta * c2_grid_delta * c3_grid_delta;
-
-    let grid = c1_grid * grid_points.pow(2) + c2_grid * grid_points + c3_grid;
-    let grid = grid * lut.output_channels as usize;
-    let c1_grid2 = if c1_grid < grid_points - 1 {c1_grid + 1} else {c1_grid}; 
-    let c2_grid2 = if c2_grid < grid_points - 1 {c2_grid + 1} else {c2_grid}; 
-    let c3_grid2 = if c3_grid < grid_points - 1 {c3_grid + 1} else {c3_grid}; 
-    let grid2 = c1_grid2 * grid_points.pow(2)  + c2_grid2 * grid_points + c3_grid2;
-    let grid2 = grid2 * lut.output_channels as usize;
- 
-    let d1 = lut.clut_values[grid]   as f64 * (1.0  -grid_delta) + lut.clut_values[grid2]   as f64 * grid_delta;
-    let d2 = lut.clut_values[grid+1] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+1] as f64 * grid_delta;
-    let d3 = lut.clut_values[grid+2] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+2] as f64 * grid_delta;
-    let d4 = lut.clut_values[grid+3] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+3] as f64 * grid_delta;
-
-    let d1 = lut.output_table[(d1 as usize).clamp(0,255)];
-    let d2 = lut.output_table[(d2 as usize).clamp(0,255) + 256];
-    let d3 = lut.output_table[(d3 as usize).clamp(0,255) + 512];
-    let d4 = lut.output_table[(d4 as usize).clamp(0,255) + 768];
-
-    (d1,d2,d3,d4)
+fn evaluate<T: Copy + Into<f64>, const N: usize, const M: usize>(
+    input: [u8; N],
+    matrix: &[S15Fixed16Number],
+    grid: usize,
+    tables: (&[T], &[T], &[T]),
+    entries: (usize, usize),
+    max: f64,
+) -> [f64; M] {
+    let mut coordinates = input.map(|v| v as f64 / 255.0);
+    if N == 3 {
+        let original = coordinates;
+        for axis in 0..3 {
+            coordinates[axis] = (0..3)
+                .map(|i| matrix[axis * 3 + i].as_f64() * original[i])
+                .sum::<f64>()
+                .clamp(0.0, 1.0);
+        }
+    }
+    let mut low = [0; N];
+    let mut high = [0; N];
+    let mut fraction = [0.0; N];
+    for axis in 0..N {
+        let offset = axis * entries.0;
+        let x = table(&tables.0[offset..offset + entries.0], coordinates[axis]) / max
+            * (grid - 1) as f64;
+        low[axis] = x as usize;
+        high[axis] = (low[axis] + 1).min(grid - 1);
+        fraction[axis] = x - low[axis] as f64;
+    }
+    let mut output = [0.0; M];
+    // ICC CLUT order: the first input varies slowest, outputs are interleaved.
+    for corner in 0..(1 << N) {
+        let mut index = 0;
+        let mut weight = 1.0;
+        for axis in 0..N {
+            let upper = corner & (1 << axis) != 0;
+            index = index * grid + if upper { high[axis] } else { low[axis] };
+            weight *= if upper {
+                fraction[axis]
+            } else {
+                1.0 - fraction[axis]
+            };
+        }
+        for channel in 0..M {
+            output[channel] += tables.1[index * M + channel].into() * weight;
+        }
+    }
+    for channel in 0..M {
+        let offset = channel * entries.1;
+        output[channel] = table(&tables.2[offset..offset + entries.1], output[channel] / max);
+    }
+    output
 }
 
-pub fn d3_to_d3_lut8(c1:u8,c2:u8,c3:u8,lut:&Mft1) -> (u8,u8,u8) {
-    let grid_points = lut.number_of_clut_grid_points as usize;
-    let e = &lut.e_params;
-
-    let c1_1 = e[0].as_f64() * c1 as f64 + e[1].as_f64() * c2 as f64 + e[2].as_f64() * c3 as f64;
-    let c2_1 = e[3].as_f64() * c1 as f64 + e[4].as_f64() * c2 as f64 + e[5].as_f64() * c3 as f64;
-    let c3_1 = e[6].as_f64() * c1 as f64 + e[7].as_f64() * c2 as f64 + e[8].as_f64() * c3 as f64;
-
-    let c1 = c1_1 as usize;
-    let c2 = c2_1 as usize;
-    let c3 = c3_1 as usize;
-
-    let c1 = lut.input_table [c1 as usize];
-    let c2 = lut.input_table [c2 as usize + 256];
-    let c3 = lut.input_table [c3 as usize + 256 * 2];
-
-    let c1_grid = ((c1 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c2_grid = ((c2 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c3_grid = ((c3 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c1_grid_delta = ((c1 as f64 / 255.0) * grid_points as f64) - c1_grid as f64;
-    let c2_grid_delta = ((c2 as f64 / 255.0) * grid_points as f64) - c2_grid as f64;
-    let c3_grid_delta = ((c3 as f64 / 255.0) * grid_points as f64) - c3_grid as f64;
-    let grid_delta = c1_grid_delta * c2_grid_delta * c3_grid_delta;
-
-    let grid = c1_grid * grid_points.pow(2) + c2_grid * grid_points + c3_grid;
-    let grid = grid * lut.output_channels as usize;
-    let c1_grid2 = if c1_grid < grid_points - 1 {c1_grid + 1} else {c1_grid}; 
-    let c2_grid2 = if c2_grid < grid_points - 1 {c2_grid + 1} else {c2_grid}; 
-    let c3_grid2 = if c3_grid < grid_points - 1 {c3_grid + 1} else {c3_grid}; 
-    let grid2 = c1_grid2 * grid_points.pow(2)  + c2_grid2 * grid_points + c3_grid2;
-    let grid2 = grid2 * lut.output_channels as usize;
- 
-    let d1 = lut.clut_values[grid]   as f64 * (1.0  -grid_delta) + lut.clut_values[grid2]   as f64 * grid_delta;
-    let d2 = lut.clut_values[grid+1] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+1] as f64 * grid_delta;
-    let d3 = lut.clut_values[grid+2] as f64 * (1.0  -grid_delta) + lut.clut_values[grid2+2] as f64 * grid_delta;
-
-    let d1 = lut.output_table[(d1 as usize).clamp(0,255)];
-    let d2 = lut.output_table[(d2 as usize).clamp(0,255) + 256];
-    let d3 = lut.output_table[(d3 as usize).clamp(0,255) + 512];
-
-    (d1,d2,d3)
+fn lut8<const N: usize, const M: usize>(input: [u8; N], lut: &Mft1) -> [u8; M] {
+    check8(lut, N, M).expect("Invalid legacy LUT8 payload");
+    evaluate::<_, N, M>(
+        input,
+        &lut.e_params,
+        lut.number_of_clut_grid_points as usize,
+        (&lut.input_table, &lut.clut_values, &lut.output_table),
+        (256, 256),
+        255.0,
+    )
+    .map(|v| v.round().clamp(0.0, 255.0) as u8)
+}
+fn lut16<const N: usize, const M: usize>(input: [u8; N], lut: &Mft2) -> [f64; M] {
+    check16(lut, N, M).expect("Invalid legacy LUT16 payload");
+    evaluate(
+        input,
+        &lut.e_params,
+        lut.number_of_clut_grid_points as usize,
+        (&lut.input_table, &lut.clut_values, &lut.output_table),
+        (
+            lut.input_table_enteries as usize,
+            lut.output_table_enteries as usize,
+        ),
+        65535.0,
+    )
 }
 
-pub fn d3_to_d1_lut8(c1:u8,c2:u8,c3:u8,lut:&Mft1) -> u8 {
-    let grid_points = lut.number_of_clut_grid_points as usize;
-    let e = &lut.e_params;
+/// Evaluate a 4-input, 3-output legacy LUT; panics on malformed payloads.
+pub fn d4_to_d3_lut8(c0: u8, c1: u8, c2: u8, c3: u8, lut: &Mft1) -> (u8, u8, u8) {
+    let v = lut8::<4, 3>([c0, c1, c2, c3], lut);
+    (v[0], v[1], v[2])
+}
 
-    let c1_1 = e[0].as_f64() * c1 as f64 + e[1].as_f64() * c2 as f64 + e[2].as_f64() * c3 as f64;
-    let c2_1 = e[3].as_f64() * c1 as f64 + e[4].as_f64() * c2 as f64 + e[5].as_f64() * c3 as f64;
-    let c3_1 = e[6].as_f64() * c1 as f64 + e[7].as_f64() * c2 as f64 + e[8].as_f64() * c3 as f64;
+/// Evaluate a 3-input, 4-output legacy LUT; panics on malformed payloads.
+pub fn d3_to_d4_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> (u8, u8, u8, u8) {
+    let v = lut8::<3, 4>([c0, c1, c2], lut);
+    (v[0], v[1], v[2], v[3])
+}
 
-    let c1 = c1_1 as usize;
-    let c2 = c2_1 as usize;
-    let c3 = c3_1 as usize;
+/// Evaluate a 3-input, 3-output legacy LUT; panics on malformed payloads.
+pub fn d3_to_d3_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> (u8, u8, u8) {
+    let v = lut8::<3, 3>([c0, c1, c2], lut);
+    (v[0], v[1], v[2])
+}
 
-    let c1 = lut.input_table [c1 as usize];
-    let c2 = lut.input_table [c2 as usize + 256];
-    let c3 = lut.input_table [c3 as usize + 256 * 2];
+/// Evaluate a 3-input, 1-output legacy LUT; panics on malformed payloads.
+pub fn d3_to_d1_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> u8 {
+    let v = lut8::<3, 1>([c0, c1, c2], lut);
+    v[0]
+}
 
-    let c1_grid = ((c1 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c2_grid = ((c2 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c3_grid = ((c3 as f64 / 255.0) * grid_points as f64).floor() as usize;
-    let c1_grid_delta = ((c1 as f64 / 255.0) * grid_points as f64) - c1_grid as f64;
-    let c2_grid_delta = ((c2 as f64 / 255.0) * grid_points as f64) - c2_grid as f64;
-    let c3_grid_delta = ((c3 as f64 / 255.0) * grid_points as f64) - c3_grid as f64;
-    let grid_delta = c1_grid_delta * c2_grid_delta * c3_grid_delta;
+/// Evaluate a 4-input, 3-output legacy LUT; panics on malformed payloads.
+pub fn d4_to_d3_lut16(c0: u8, c1: u8, c2: u8, c3: u8, lut: &Mft2) -> (f64, f64, f64) {
+    let v = lut16::<4, 3>([c0, c1, c2, c3], lut);
+    (v[0], v[1], v[2])
+}
 
-    let grid = c1_grid * grid_points.pow(2) + c2_grid * grid_points + c3_grid;
-    let grid = grid * lut.output_channels as usize;
-    let c1_grid2 = if c1_grid < grid_points - 1 {c1_grid + 1} else {c1_grid}; 
-    let c2_grid2 = if c2_grid < grid_points - 1 {c2_grid + 1} else {c2_grid}; 
-    let c3_grid2 = if c3_grid < grid_points - 1 {c3_grid + 1} else {c3_grid}; 
-    let grid2 = c1_grid2 * grid_points.pow(2)  + c2_grid2 * grid_points + c3_grid2;
-    let grid2 = grid2 * lut.output_channels as usize;
- 
-    let d1 = lut.clut_values[grid]   as f64 * (1.0  -grid_delta) + lut.clut_values[grid2]   as f64 * grid_delta;
+/// Evaluate a 3-input, 4-output legacy LUT; panics on malformed payloads.
+pub fn d3_to_d4_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> (f64, f64, f64, f64) {
+    let v = lut16::<3, 4>([c0, c1, c2], lut);
+    (v[0], v[1], v[2], v[3])
+}
 
-    
-    let d1 = lut.output_table[(d1 as usize).clamp(0,255)];
+/// Evaluate a 3-input, 3-output legacy LUT; panics on malformed payloads.
+pub fn d3_to_d3_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> (f64, f64, f64) {
+    let v = lut16::<3, 3>([c0, c1, c2], lut);
+    (v[0], v[1], v[2])
+}
 
-    d1
+/// Evaluate a 3-input, 1-output legacy LUT; panics on malformed payloads.
+pub fn d3_to_d1_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> f64 {
+    let v = lut16::<3, 1>([c0, c1, c2], lut);
+    v[0]
 }

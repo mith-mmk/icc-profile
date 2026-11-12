@@ -1,5 +1,10 @@
+//! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
+//! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Output reservation failures are returned as errors.
+//! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
+//!
 use std::io::Result;
-use std::io::{Error,ErrorKind};
+use crate::utils::checked_batch_len;
 use crate::cms::ColorMatrix3D;
 
 pub enum XYZtoRGBCoefficient {
@@ -51,12 +56,10 @@ pub fn xyz_to_rgb(x:f64,y:f64,z:f64) -> (u8,u8,u8) {
 
 
 pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries *3 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
-    let index = (entries / 3) as usize;
-    let mut buffer = Vec::with_capacity(index * 3);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -64,7 +67,8 @@ pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) 
         let y = buf[ptr + 1];
         let z = buf[ptr + 2];
 
-        let (r,g,b) = matrix.convert_3d_u8(x, y, z);
+        let (r,g,b) = matrix.try_convert_3d(x as f64, y as f64, z as f64)?;
+        let (r,g,b) = (r.clamp(0.0, 255.0) as u8, g.clamp(0.0, 255.0) as u8, b.clamp(0.0, 255.0) as u8);
 
         buffer.push(r);
         buffer.push(g);
@@ -76,12 +80,10 @@ pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) 
 }
 
 pub fn xyz_to_rgba_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries * 4 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 4, 4)?;
     let matrix = mode.get();
-    let index = (entries / 4) as usize;
-    let mut buffer = Vec::with_capacity(index * 3);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 4;
@@ -89,7 +91,8 @@ pub fn xyz_to_rgba_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient)
         let y = buf[ptr + 1];
         let z = buf[ptr + 2];
 
-        let (r,g,b) = matrix.convert_3d_u8(x, y, z);
+        let (r,g,b) = matrix.try_convert_3d(x as f64, y as f64, z as f64)?;
+        let (r,g,b) = (r.clamp(0.0, 255.0) as u8, g.clamp(0.0, 255.0) as u8, b.clamp(0.0, 255.0) as u8);
 
         buffer.push(r);
         buffer.push(g);

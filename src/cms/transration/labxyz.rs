@@ -3,6 +3,7 @@
 //! skip evaluation. Finite byte outputs retain legacy rounding and clipping.
 //!
 use super::WhitePoint;
+use crate::utils::checked_batch_len;
 use std::io::{Error,ErrorKind};
 use std::io::Result;
 
@@ -45,13 +46,9 @@ pub fn lab_to_xyz_wp(l:f64,a:f64,b:f64,wp: &WhitePoint) -> (f64,f64,f64) {
 
 // xyz =0.0-1.0
 pub fn lab_to_xyz_entries_f64(buf:&[f64],entries: usize,wp: &WhitePoint)  -> Result<Vec<f64>> {
-    let required = entries.checked_mul(3).ok_or_else(||
-        Error::new(ErrorKind::InvalidInput, "Entry count overflow"))?;
-    if buf.len() < required {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<f64>(buf.len(), entries, 3, 3)?;
     let mut buffer = Vec::new();
-    buffer.try_reserve_exact(required).map_err(Error::other)?;
+    buffer.try_reserve_exact(output_len).map_err(Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -72,13 +69,9 @@ pub fn lab_to_xyz_entries_f64(buf:&[f64],entries: usize,wp: &WhitePoint)  -> Res
 // lab 0-255 / xyz = 0-255
 
 pub fn lab_to_xyz_entries(buf:&[u8],entries: usize,wp: &WhitePoint)  -> Result<Vec<u8>> {
-    let required = entries.checked_mul(3).ok_or_else(||
-        Error::new(ErrorKind::InvalidInput, "Entry count overflow"))?;
-    if buf.len() < required {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let mut buffer = Vec::new();
-    buffer.try_reserve_exact(required).map_err(Error::other)?;
+    buffer.try_reserve_exact(output_len).map_err(Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;

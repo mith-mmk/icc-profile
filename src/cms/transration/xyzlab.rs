@@ -3,8 +3,8 @@
 //! skip evaluation. Finite byte outputs retain legacy rounding and clipping.
 //!
 use crate::cms::transration::WhitePoint;
-use std::io::{Error,ErrorKind};
-use std::io::Result;
+use crate::utils::checked_batch_len;
+use std::io::{Error, ErrorKind, Result};
 
 
 
@@ -46,13 +46,9 @@ pub fn xyz_to_lab_wp(x:f64,y:f64,z:f64,wp: &WhitePoint) -> (f64,f64,f64) {
 }
 
 pub fn xyz_to_lab_entries(buf:&[u8],entries: usize,wp: &WhitePoint) -> Result<Vec<u8>> {
-    let required = entries.checked_mul(3).ok_or_else(||
-        Error::new(ErrorKind::InvalidInput, "Entry count overflow"))?;
-    if buf.len() < required {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let mut buffer = Vec::new();
-    buffer.try_reserve_exact(required).map_err(Error::other)?;
+    buffer.try_reserve_exact(output_len).map_err(Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -74,14 +70,10 @@ pub fn xyz_to_lab_entries(buf:&[u8],entries: usize,wp: &WhitePoint) -> Result<Ve
 }
 
 pub fn xyz_to_lab_entries_u16(buf:&[u8],entries: usize,mode: &WhitePoint) -> Result<Vec<u16>> {
-    let required = entries.checked_mul(3).ok_or_else(||
-        Error::new(ErrorKind::InvalidInput, "Entry count overflow"))?;
-    if buf.len() < required {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u16>(buf.len(), entries, 3, 3)?;
     let wp = mode.get();
     let mut buffer = Vec::new();
-    buffer.try_reserve_exact(required).map_err(Error::other)?;
+    buffer.try_reserve_exact(output_len).map_err(Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -104,14 +96,10 @@ pub fn xyz_to_lab_entries_u16(buf:&[u8],entries: usize,mode: &WhitePoint) -> Res
 }
 
 pub fn xyz_to_lab_entries_f64 (buf:&[u8],entries: usize,mode: &WhitePoint) -> Result<Vec<f64>> {
-    let required = entries.checked_mul(3).ok_or_else(||
-        Error::new(ErrorKind::InvalidInput, "Entry count overflow"))?;
-    if buf.len() < required {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<f64>(buf.len(), entries, 3, 3)?;
     let wp = mode.get();
     let mut buffer = Vec::new();
-    buffer.try_reserve_exact(required).map_err(Error::other)?;
+    buffer.try_reserve_exact(output_len).map_err(Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;

@@ -32,24 +32,39 @@ parsed legacy fields, not the original bytes needed by the checked engine.
 
 ## Compatibility behavior
 
-The tuple-returning names retain their signatures and historical profile-free
-fallback values. Unsupported metadata, unsupported tags, and malformed LUTs
-now reach that fallback explicitly rather than risking grid underflow or an
-out-of-bounds read. They also retain the approximate LUT16 route for valid
-metadata and shapes. This route still has legacy Lab coding/byte quantization
-limitations and must not be treated as a correct ICC transform.
+The tuple-returning names retain their signatures and historical admission:
+only CMYK color space and an explicit A2B0/B2A0 LUT8/LUT16 tag are required.
+They deliberately do not acquire the checked API's stricter PCS, version,
+class or D50 restrictions. Unsupported metadata therefore does not silently
+switch an existing legacy route to approximate fallback colors.
+
+Historical profile-free fallback is retained only for non-CMYK profiles,
+missing tags and unsupported tag types. Reverse conversion also retains the
+exact old missing-nearest-node fallback condition. A private predicate uses
+the old byte/u16 Lab quantization and checked index arithmetic only to decide
+whether that formerly selected node exists; it never samples color values.
+A partial CLUT with that node present fails full validation explicitly rather
+than acquiring a new fallback case. Zero grid explicitly panics.
+
+For a selected LUT, all other invalid shape or non-finite color-bridge failures
+panic in the old tuple API and return errors in the applicable checked API.
+The historical reverse missing-node test precedes these new validations, as
+it did before. Its old saturated float-to-integer behavior is isolated from
+actual evaluation, which rejects non-finite Lab values before casting.
+The new `try_*` APIs never fall back and do not unwind on malformed inputs.
 
 Valid reverse LUT routes now use the complete evaluator: matrix, input tables,
 interpolated CLUT and output tables. Results intentionally change from the
 old nearest-CLUT lookup. LUT16 output is scaled over 0..65535 to bytes rather
-than just discarding its low byte. Metadata outside the supported subset now
-falls back in the tuple API rather than being interpreted as Lab accidentally.
+than just discarding its low byte. The retained legacy LUT16 route still has
+Lab coding/byte quantization limitations and is not a correct ICC transform.
+
 The separate ICC-free `cmyk_to_rgb(y,m,c,k)` function is unchanged. Only the
 old profile-free fallback intentionally calls it as `cmyk_to_rgb(c,m,y,k)`,
 preserving its historical result even when C and Y differ.
 
-Regression tests in `tests/legacy_profile_helpers.rs` use synthetic tables
-with analytically known corner/interior results, independent of production
-LUT helper outputs. They cover stage tables, matrix effect, interpolation,
-endpoints, zero/one grids, channel/length errors, unsupported metadata/tag
-routes, versions, white-point distinction, and legacy-only fallback behavior.
+Regression tests in `tests/legacy_profile_helpers.rs` cover independent stage
+constants/interior results, asymmetric channel order, matrix effect, endpoints,
+shape errors, strict metadata rejection versus old admission, white-point
+semantics, explicit panics versus checked errors, and exact historical
+missing-node/fallback behavior.

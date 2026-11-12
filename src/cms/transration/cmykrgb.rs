@@ -109,10 +109,16 @@ pub fn try_cmyk_to_rgb_from_profile(
 }
 
 /// Compatibility-only approximate conversion. Prefer
-/// [`try_cmyk_to_rgb_from_profile`] to observe unsupported/malformed profiles.
-/// Retains the approximate LUT16 route and the historical profile-free fallback
-/// on failure; neither is a color-managed sRGB conversion. The fallback calls
+/// [`try_cmyk_to_rgb_from_profile`] for checked metadata and explicit errors.
+/// The historical route checks only CMYK color space and an A2B0 LUT tag;
+/// it does not enforce PCS, version, class or D50 metadata. Fallback is retained
+/// only for non-CMYK profiles, missing tags or unsupported tag types. It calls
 /// `cmyk_to_rgb(c,m,y,k)` despite that function's legacy `(y,m,c,k)` signature.
+///
+/// # Panics
+/// Panics when a selected LUT or numeric bridge is invalid. Such failures do
+/// not silently substitute fallback colors. The retained LUT16 bridge remains
+/// approximate and does not implement ICC Lab16 coding.
 pub fn cmyk_to_rgb_from_profile(
     c: u8,
     m: u8,
@@ -120,21 +126,22 @@ pub fn cmyk_to_rgb_from_profile(
     k: u8,
     decoded: &DecodedICCProfile,
 ) -> (u8, u8, u8) {
-    if check_legacy_profile(decoded).is_ok() {
-        if let Some(Data::Lut16(lut)) = decoded.tags.get("A2B0") {
-            if let Ok(rgb) =
-                try_cmyk_to_rgb_lut16(c, m, y, k, lut, &WhitePoint::from_profile(decoded))
-            {
-                return rgb;
+    if decoded.color_space == u32::from_be_bytes(*b"CMYK") {
+        let wp = WhitePoint::from_profile(decoded);
+        match decoded.tags.get("A2B0") {
+            Some(Data::Lut8(lut)) => {
+                return try_cmyk_to_rgb_lut8(c, m, y, k, lut, &wp)
+                    .expect("Invalid legacy profile LUT8 or color bridge")
             }
-        }
-        if let Ok(rgb) = try_cmyk_to_rgb_from_profile(c, m, y, k, decoded) {
-            return rgb;
+            Some(Data::Lut16(lut)) => {
+                return try_cmyk_to_rgb_lut16(c, m, y, k, lut, &wp)
+                    .expect("Invalid legacy profile LUT16 or color bridge")
+            }
+            _ => {}
         }
     }
     cmyk_to_rgb(c, m, y, k)
 }
-
 /// Checked **legacy approximation**, not an ICC color-managed transform.
 ///
 /// Requires output-class CMYK, Lab PCS, v2/v4, a D50 header illuminant and an
@@ -156,13 +163,8 @@ pub fn try_rgb_to_cmyk_from_profile(
     check_legacy_profile(decoded)?;
     match decoded.tags.get("B2A0") {
         Some(Data::Lut8(lut)) => {
-            let (l, a, b) = legacy_rgb_lab(r, g, b, decoded);
-            try_d3_to_d4_lut8(
-                (l / 100.0 * 255.0).clamp(0.0, 255.0) as u8,
-                ((a + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8,
-                ((b + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8,
-                lut,
-            )
+            let input = checked_legacy_lab_bytes(legacy_rgb_lab(r, g, b, decoded))?;
+            try_d3_to_d4_lut8(input[0], input[1], input[2], lut)
         }
         _ => Err(unsupported_profile(
             "Checked legacy bridge requires explicit B2A0 LUT8",
@@ -170,37 +172,60 @@ pub fn try_rgb_to_cmyk_from_profile(
     }
 }
 
-/// Compatibility-only approximate conversion with the historical subtractive
-/// fallback on unsupported/malformed profiles. Prefer
-/// [`try_rgb_to_cmyk_from_profile`] for explicit failure. Valid LUT routes now
-/// evaluate matrix/input tables/interpolated CLUT/output tables, so results can
-/// differ from the old nearest-only implementation. The retained LUT16 route
-/// also quantizes its input to bytes and does not implement ICC Lab16 coding.
+/// Compatibility-only approximate conversion. Prefer
+/// [`try_rgb_to_cmyk_from_profile`] for checked metadata and explicit errors.
+/// Historical admission checks only CMYK and a B2A0 LUT tag, not PCS, version,
+/// class or D50 metadata. Fallback is retained only for non-CMYK, missing or
+/// unsupported tags, or the historical nearest CLUT node being absent. That
+/// availability check does not sample a color: valid routes now evaluate all
+/// matrix/input/interpolated-CLUT/output stages, intentionally changing results.
+/// The LUT16 route still quantizes input to bytes and lacks ICC Lab16 coding.
+///
+/// # Panics
+/// Zero grid, non-finite color bridge values, or other selected LUT validation
+/// failures panic explicitly instead of silently substituting fallback colors.
 pub fn rgb_to_cmyk_from_profile(
     r: u8,
     g: u8,
     b: u8,
     decoded: &DecodedICCProfile,
 ) -> (u8, u8, u8, u8) {
-    if check_legacy_profile(decoded).is_ok() {
-        if let Some(Data::Lut16(lut)) = decoded.tags.get("B2A0") {
-            let (l, a, b) = legacy_rgb_lab(r, g, b, decoded);
-            if let Ok((c, m, y, k)) = try_d3_to_d4_lut16(
-                (l / 100.0 * 255.0).clamp(0.0, 255.0) as u8,
-                ((a + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8,
-                ((b + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8,
-                lut,
-            ) {
-                return (
-                    (c / 257.0).round() as u8,
-                    (m / 257.0).round() as u8,
-                    (y / 257.0).round() as u8,
-                    (k / 257.0).round() as u8,
-                );
+    if decoded.color_space == u32::from_be_bytes(*b"CMYK") {
+        let lab = legacy_rgb_lab(r, g, b, decoded);
+        match decoded.tags.get("B2A0") {
+            Some(Data::Lut8(lut)) => {
+                if historical_reverse_node_present(
+                    lab,
+                    lut.number_of_clut_grid_points,
+                    lut.clut_values.len(),
+                    false,
+                ) {
+                    let input = checked_legacy_lab_bytes(lab)
+                        .expect("Non-finite legacy profile color bridge");
+                    return try_d3_to_d4_lut8(input[0], input[1], input[2], lut)
+                        .expect("Invalid legacy profile LUT8");
+                }
             }
-        }
-        if let Ok(cmyk) = try_rgb_to_cmyk_from_profile(r, g, b, decoded) {
-            return cmyk;
+            Some(Data::Lut16(lut)) => {
+                if historical_reverse_node_present(
+                    lab,
+                    lut.number_of_clut_grid_points,
+                    lut.clut_values.len(),
+                    true,
+                ) {
+                    let input = checked_legacy_lab_bytes(lab)
+                        .expect("Non-finite legacy profile color bridge");
+                    let (c, m, y, k) = try_d3_to_d4_lut16(input[0], input[1], input[2], lut)
+                        .expect("Invalid legacy profile LUT16");
+                    return (
+                        (c / 257.0).round() as u8,
+                        (m / 257.0).round() as u8,
+                        (y / 257.0).round() as u8,
+                        (k / 257.0).round() as u8,
+                    );
+                }
+            }
+            _ => {}
         }
     }
     (
@@ -211,6 +236,54 @@ pub fn rgb_to_cmyk_from_profile(
     )
 }
 
+// Preserve precisely the old short-CLUT fallback decision, including its old
+// float-to-integer saturation. Never use this nearest node for color evaluation.
+// New shape/finite checks happen before the actual evaluator, not as fallback.
+fn historical_reverse_node_present(lab: (f64, f64, f64), grid: u8, len: usize, wide: bool) -> bool {
+    let grid = grid as usize;
+    let last = grid
+        .checked_sub(1)
+        .expect("Invalid legacy profile zero grid");
+    let max = if wide { 65535.0 } else { 255.0 };
+    let encoded = [
+        lab.0 / 100.0,
+        (lab.1 + 127.0) / 254.0,
+        (lab.2 + 127.0) / 254.0,
+    ]
+    .map(|v| {
+        if wide {
+            (v * max).clamp(0.0, max) as u16 as f64
+        } else {
+            (v * max).clamp(0.0, max) as u8 as f64
+        }
+    });
+    let mut node = 0usize;
+    for value in encoded {
+        let coordinate = ((value / max * last as f64).round() as usize).min(last);
+        node = node
+            .checked_mul(grid)
+            .and_then(|v| v.checked_add(coordinate))
+            .expect("Legacy profile CLUT index overflow");
+    }
+    node.checked_mul(4)
+        .and_then(|v| v.checked_add(3))
+        .expect("Legacy profile CLUT index overflow")
+        < len
+}
+
+fn checked_legacy_lab_bytes(lab: (f64, f64, f64)) -> std::io::Result<[u8; 3]> {
+    if [lab.0, lab.1, lab.2].iter().any(|v| !v.is_finite()) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Non-finite legacy profile color bridge",
+        ));
+    }
+    Ok([
+        (lab.0 / 100.0 * 255.0).clamp(0.0, 255.0) as u8,
+        ((lab.1 + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8,
+        ((lab.2 + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8,
+    ])
+}
 fn unsupported_profile(message: &'static str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Unsupported, message)
 }

@@ -114,7 +114,7 @@ fn invalid_metadata_and_missing_routes_return_errors_without_unwind() {
     }
 }
 #[test]
-fn malformed_shapes_fail_checked_and_only_compatibility_falls_back() {
+fn malformed_shapes_error_checked_and_panic_legacy_except_old_missing_node() {
     for direction in [false, true] {
         for fault in 0..7 {
             let mut lut = fixture(if direction { 3 } else { 4 }, if direction { 4 } else { 3 });
@@ -135,17 +135,22 @@ fn malformed_shapes_fail_checked_and_only_compatibility_falls_back() {
                         .kind(),
                     ErrorKind::InvalidInput
                 );
-                assert_eq!(rgb_to_cmyk_from_profile(0, 0, 0, &p), (255, 255, 255, 255));
+                let legacy = std::panic::catch_unwind(|| rgb_to_cmyk_from_profile(0, 0, 0, &p));
+                if fault == 6 {
+                    assert_eq!(legacy.unwrap(), (255, 255, 255, 255));
+                } else {
+                    assert!(legacy.is_err());
+                }
             } else {
                 assert_eq!(
-                    try_cmyk_to_rgb_from_profile(1, 2, 3, 4, &p)
+                    try_cmyk_to_rgb_from_profile(0, 0, 255, 255, &p)
                         .unwrap_err()
                         .kind(),
                     ErrorKind::InvalidInput
                 );
-                assert_eq!(
-                    cmyk_to_rgb_from_profile(1, 2, 3, 4, &p),
-                    cmyk_to_rgb(1, 2, 3, 4)
+                assert!(
+                    std::panic::catch_unwind(|| cmyk_to_rgb_from_profile(0, 0, 255, 255, &p))
+                        .is_err()
                 );
             }
         }
@@ -217,9 +222,18 @@ fn lut16_is_explicitly_unsupported_checked_but_full_stage_in_compatibility() {
         );
         assert_eq!(rgb_to_cmyk_from_profile(0, 0, 0, &p), (245, 235, 225, 215));
         if let Some(Data::Lut16(lut)) = p.tags.get_mut("B2A0") {
-            lut.number_of_clut_grid_points = 0;
+            lut.clut_values.truncate(4);
+        }
+        assert!(std::panic::catch_unwind(|| rgb_to_cmyk_from_profile(0, 0, 0, &p)).is_err());
+        assert_eq!(rgb_to_cmyk_from_profile(255, 255, 255, &p), (0, 0, 0, 0));
+        if let Some(Data::Lut16(lut)) = p.tags.get_mut("B2A0") {
+            lut.clut_values.truncate(3);
         }
         assert_eq!(rgb_to_cmyk_from_profile(0, 0, 0, &p), (255, 255, 255, 255));
+        if let Some(Data::Lut16(lut)) = p.tags.get_mut("B2A0") {
+            lut.number_of_clut_grid_points = 0;
+        }
+        assert!(std::panic::catch_unwind(|| rgb_to_cmyk_from_profile(0, 0, 0, &p)).is_err());
     }
 }
 #[test]
@@ -265,4 +279,95 @@ fn forward_c_and_y_axes_are_not_permuted_and_legacy_fallback_is_explicit() {
     // silently change this to the corrected LUT channel convention.
     assert_eq!(cmyk_to_rgb_from_profile(0, 0, 255, 255, &p), (255, 0, 0));
     assert_eq!(cmyk_to_rgb_from_profile(255, 0, 0, 255, &p), (0, 0, 255));
+}
+
+#[test]
+fn legacy_metadata_admission_does_not_gain_new_fallback() {
+    let mut forward = profile("A2B0", fixture(4, 3));
+    let expected_forward = cmyk_to_rgb_from_profile(0, 0, 255, 255, &forward);
+    let mut reverse = profile("B2A0", fixture(3, 4));
+    let expected_reverse = rgb_to_cmyk_from_profile(0, 0, 0, &reverse);
+    for p in [&mut forward, &mut reverse] {
+        p.pcs = u32::from_be_bytes(*b"XYZ ");
+        p.version = 0x05000000;
+        p.device_class = u32::from_be_bytes(*b"link");
+    }
+    assert!(try_cmyk_to_rgb_from_profile(0, 0, 255, 255, &forward).is_err());
+    assert!(try_rgb_to_cmyk_from_profile(0, 0, 0, &reverse).is_err());
+    assert_eq!(
+        cmyk_to_rgb_from_profile(0, 0, 255, 255, &forward),
+        expected_forward
+    );
+    assert_eq!(
+        rgb_to_cmyk_from_profile(0, 0, 0, &reverse),
+        expected_reverse
+    );
+    assert_ne!(expected_forward, (255, 0, 0));
+    assert_ne!(expected_reverse, (255, 255, 255, 255));
+}
+
+#[test]
+fn reverse_short_clut_fallback_uses_only_historical_node_availability() {
+    let mut p = profile("B2A0", fixture(3, 4));
+    if let Some(Data::Lut8(lut)) = p.tags.get_mut("B2A0") {
+        lut.clut_values.truncate(4);
+    }
+    // Black historically selects node0: present, but the full LUT is invalid.
+    assert!(std::panic::catch_unwind(|| rgb_to_cmyk_from_profile(0, 0, 0, &p)).is_err());
+    // White selects a later node, absent from the old nearest lookup.
+    assert_eq!(rgb_to_cmyk_from_profile(255, 255, 255, &p), (0, 0, 0, 0));
+    assert!(try_rgb_to_cmyk_from_profile(255, 255, 255, &p).is_err());
+    if let Some(Data::Lut8(lut)) = p.tags.get_mut("B2A0") {
+        lut.clut_values.truncate(3);
+    }
+    assert_eq!(rgb_to_cmyk_from_profile(0, 0, 0, &p), (255, 255, 255, 255));
+}
+
+#[test]
+fn nonfinite_legacy_bridge_panics_before_actual_evaluation_not_fallback() {
+    let mut p = profile("B2A0", fixture(3, 4));
+    p.illuminate.y = S15Fixed16Number::new(0.0);
+    assert!(try_rgb_to_cmyk_from_profile(0, 0, 0, &p).is_err());
+    assert!(std::panic::catch_unwind(|| rgb_to_cmyk_from_profile(0, 0, 0, &p)).is_err());
+    // Only historical missing-node fallback precedes finite/evaluator checks.
+    if let Some(Data::Lut8(lut)) = p.tags.get_mut("B2A0") {
+        lut.clut_values.clear();
+    }
+    assert_eq!(rgb_to_cmyk_from_profile(0, 0, 0, &p), (255, 255, 255, 255));
+}
+
+#[test]
+fn legacy_absent_unsupported_and_non_cmyk_fallbacks_are_unchanged() {
+    for case in 0..3 {
+        let mut forward = profile("A2B0", fixture(4, 3));
+        let mut reverse = profile("B2A0", fixture(3, 4));
+        match case {
+            0 => {
+                forward.tags.clear();
+                reverse.tags.clear();
+            }
+            1 => {
+                forward
+                    .tags
+                    .insert("A2B0".into(), Data::Raw("mAB ".into(), vec![]));
+                reverse
+                    .tags
+                    .insert("B2A0".into(), Data::Raw("mBA ".into(), vec![]));
+            }
+            _ => {
+                forward.color_space = u32::from_be_bytes(*b"RGB ");
+                reverse.color_space = forward.color_space;
+            }
+        }
+        assert_eq!(
+            cmyk_to_rgb_from_profile(0, 0, 255, 255, &forward),
+            (255, 0, 0)
+        );
+        assert_eq!(
+            rgb_to_cmyk_from_profile(0, 0, 0, &reverse),
+            (255, 255, 255, 255)
+        );
+        assert!(try_cmyk_to_rgb_from_profile(0, 0, 255, 255, &forward).is_err());
+        assert!(try_rgb_to_cmyk_from_profile(0, 0, 0, &reverse).is_err());
+    }
 }

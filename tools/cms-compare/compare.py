@@ -6,6 +6,8 @@ intent=int(sys.argv[4]) if len(sys.argv)>4 else 1
 assert 0<=intent<=3
 interpolation=sys.argv[5] if len(sys.argv)>5 else "tetrahedral"
 assert interpolation in ("tetrahedral","trilinear")
+bpc=sys.argv[6] if len(sys.argv)>6 else "off"
+assert bpc in ("off","on")
 assert not any(Path(str(prefix)+'.'+kind+'.bin').exists() for kind in ['icc','mox','lcms']), 'Use a fresh output prefix to avoid stale results'
 b=source.read_bytes(); channels=4 if b[16:20]==b'CMYK' else 3
 n=9 if channels==4 else 17
@@ -24,12 +26,13 @@ s=op(sbuf,len(b));d=op(dbuf,len(db));assert s and d
 # Public lcms2 pixel-format macros: colorspace <<16 | channels <<3 | bytes.
 fmt=((6 if channels==4 else 4)<<16)|(channels<<3)|2
 output_fmt=((6 if output_channels==4 else 4)<<16)|(output_channels<<3)|2
-tr=create(s,fmt,d,output_fmt,intent,0x0140);assert tr,'LittleCMS transform creation failed'
+flags=0x0140 | (0x2000 if bpc=="on" else 0)
+tr=create(s,fmt,d,output_fmt,intent,flags);assert tr,'LittleCMS transform creation failed'
 i=(C.c_uint16*len(values))(*values);o=(C.c_uint16*(pixels*output_channels))();run(tr,i,o,pixels)
 ref=list(o);Path(str(prefix)+'.lcms.bin').write_bytes(struct.pack('<'+'H'*len(ref),*ref));delete(tr);close(s);close(d)
 exe=Path('target/cms-compare/release/icc-cms-compare.exe')
-proc=subprocess.run([str(exe),str(source),str(destination),str(prefix),str(intent),interpolation],capture_output=True,text=True);print(proc.stdout);assert proc.returncode==0,proc.stderr
-report={'source':source.name,'source_sha256':hashlib.sha256(b).hexdigest(),'destination':destination.name,'destination_sha256':hashlib.sha256(db).hexdigest(),'lcms_version':version,'lcms_binary_sha256':hashlib.sha256(Path(libpath).read_bytes()).hexdigest(),'moxcms_version':'0.9.2','icc_3d_interpolation':interpolation,'mox_requested_3d_interpolation':'tetrahedral','lcms_interpolation':'engine-selected','intent':['perceptual','relative_colorimetric','saturation','absolute_colorimetric'][intent],'lcms_flags':'NOOPTIMIZE|NOCACHE (0x0140)','pixels':pixels,'input_channels':channels,'output_channels':output_channels,'tolerance_codes':1024,'note':'screening tolerance, not a DeltaE accuracy guarantee','status':proc.stdout,'comparison':{}}
+proc=subprocess.run([str(exe),str(source),str(destination),str(prefix),str(intent),interpolation,bpc],capture_output=True,text=True);print(proc.stdout);assert proc.returncode==0,proc.stderr
+report={'source':source.name,'source_sha256':hashlib.sha256(b).hexdigest(),'destination':destination.name,'destination_sha256':hashlib.sha256(db).hexdigest(),'lcms_version':version,'lcms_binary_sha256':hashlib.sha256(Path(libpath).read_bytes()).hexdigest(),'moxcms_version':'0.9.2','icc_3d_interpolation':interpolation,'mox_requested_3d_interpolation':'tetrahedral','lcms_interpolation':'engine-selected','intent':['perceptual','relative_colorimetric','saturation','absolute_colorimetric'][intent],'black_point_compensation':bpc,'lcms_flags':hex(flags)+' NOOPTIMIZE|NOCACHE'+('|BLACKPOINTCOMPENSATION' if bpc=='on' else ''),'pixels':pixels,'input_channels':channels,'output_channels':output_channels,'tolerance_codes':1024,'note':'screening tolerance, not a DeltaE accuracy guarantee','status':proc.stdout,'comparison':{}}
 for kind in ['icc','mox']:
  path=Path(str(prefix)+'.'+kind+'.bin')
  if not path.exists():continue

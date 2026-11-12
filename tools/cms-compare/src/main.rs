@@ -4,6 +4,7 @@ fn main() {
     let intent: u32 = args.get(4).map(|s| s.parse().expect("intent must be 0..3")).unwrap_or(1);
     assert!(intent <= 3, "intent must be 0..3");
     let trilinear = match args.get(5).map(String::as_str).unwrap_or("tetrahedral") { "tetrahedral" => false, "trilinear" => true, _ => panic!("interpolation must be tetrahedral or trilinear") };
+    let bpc = match args.get(6).map(String::as_str).unwrap_or("off") { "off" => false, "on" => true, _ => panic!("BPC must be off or on") };
     let icc_intent = [icc_profile::RenderingIntent::Perceptual, icc_profile::RenderingIntent::RelativeColorimetric, icc_profile::RenderingIntent::Saturation, icc_profile::RenderingIntent::AbsoluteColorimetric][intent as usize];
     let source = fs::read(&args[1]).unwrap();
     let destination = fs::read(&args[2]).unwrap();
@@ -27,7 +28,7 @@ fn main() {
     ) {
         (Ok(s), Ok(d)) => {
             println!("icc parse=ok");
-            match icc_profile::Transform::new(&s, &d, icc_profile::TransformOptions {rendering_intent:icc_intent, ..Default::default()}) {
+            match icc_profile::Transform::new(&s, &d, icc_profile::TransformOptions {rendering_intent:icc_intent, black_point_compensation:bpc, ..Default::default()}) {
                 Ok(t) => match t.with_algorithm_profile(icc_profile::AlgorithmProfile::default().with_clut_3d(if trilinear { icc_profile::ClutInterpolation3D::Trilinear } else { icc_profile::ClutInterpolation3D::Tetrahedral })).transform_u16_atomic(&input, &mut output) {
                     Ok(()) => {
                         save(&args[3], "icc", &output);
@@ -40,6 +41,9 @@ fn main() {
         }
         (s, d) => println!("icc parse source={:?} destination={:?}", s.err(), d.err()),
     }
+    if bpc {
+        println!("mox skipped=BPC option unavailable in this public-API harness; no disabled-BPC comparison");
+    } else {
     match (
         moxcms::ColorProfile::new_from_slice(&source),
         moxcms::ColorProfile::new_from_slice(&destination),
@@ -73,6 +77,7 @@ fn main() {
             }
         }
         (s, d) => println!("mox parse source={:?} destination={:?}", s.err(), d.err()),
+    }
     }
     println!("pixels={}", input.len() / channels);
 }

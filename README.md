@@ -1,6 +1,6 @@
 # icc-profile
 
-Pure Rust ICC profile parsing and explicit Gray/RGB and limited forward CMYK color transforms.
+Pure Rust ICC profile parsing and explicit Gray/RGB and limited CMYK color transforms.
 
 Version 0.0.7 provides a checked ICC v2/v4 CMS for Gray and
 RGB profiles. The processing core is `f32` and supports D50 PCS, XYZ/Lab,
@@ -11,8 +11,9 @@ stages, 1D interpolation, and tetrahedral 3D interpolation.
 Version 0.0.7 corrects the physical PCS connection between paired LUT stages
 when the destination uses Lab PCS. Matrix destinations continue to use XYZ.
 
-Reverse CMYK, N-color, MPE, black-point compensation, and other unsupported routes
-return `UnsupportedProfileFeature`; there is no simplified color fallback.
+The development branch adds explicitly bounded CMYK output and relative matrix
+black-point compensation, described below. N-color, MPE and other unsupported
+routes return `UnsupportedProfileFeature`; there is no simplified color fallback.
 Alpha is not passed to the CMS and must be handled by the caller.
 
 ## Interpolation and LittleCMS compatibility
@@ -207,7 +208,7 @@ A2B2 (saturation) for the supported v2 mft2 / v4 mAB display paths. Missing
 A2B1/A2B2 may use A2B0; RouteInfo reports this fallback. A malformed selected
 tag is never replaced by another tag. This executes profile-provided tables,
 not a newly invented gamut mapper or a guarantee of cross-CMS equivalence.
-CMYK output and BPC remain explicit unsupported errors. Absolute CMYK display has the narrower scope below.
+CMYK output and limited matrix BPC are described below. Absolute CMYK display has the narrower scope below.
 Existing non-relative matrix-route media-white requirements remain in force.
 See [intent validation](docs/cmyk-intents.md) for scope and black-box results.
 
@@ -219,3 +220,18 @@ Both header illuminants must be encoded D50 and both media whites valid.
 A2B0 fallback, LUT output profiles, non-D50 display whites, and standalone
 CMYK absolute CompiledProfile are rejected. Adapted PCS/white values are not
 passed through chad again. See [scope, specification and measurements](docs/cmyk-absolute.md).
+
+### Bounded CMYK output and BPC
+
+CMYK output uses explicit printer B2A tags, without numerical A2B inversion:
+[relative RGB/PCS output](docs/cmyk-output.md),
+[restricted absolute output](docs/cmyk-output-absolute.md),
+[v4 perceptual LUT connection](docs/cmyk-output-perceptual.md) and
+[v4 saturation LUT connection](docs/cmyk-output-saturation.md).
+Each stage documents its source/version/intent restrictions and rejected paths.
+
+The existing black_point_compensation option now supports only relative
+RGB XYZ matrix-to-matrix routes with D50 headers and a verified matrix forward
+route for the destination. [BPC scope and diagnostics](docs/relative-matrix-bpc.md)
+describe endpoint estimates, memory budgets and black-box comparisons.
+LUT/CMYK BPC remains an explicit error; no full ISO conformance is claimed.

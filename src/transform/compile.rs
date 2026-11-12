@@ -1,4 +1,5 @@
 use super::algorithm::AlgorithmProfile;
+use super::bpc::{BpcDiagnostics, BpcStage};
 use super::compile_budget::CompileBudget;
 use super::curve::inverse_curve_checked;
 use super::error::TransformError;
@@ -304,6 +305,7 @@ pub struct Transform {
     input_raw_device_class: [u8; 4],
     output_raw_device_class: [u8; 4],
     reverse_pcs_connection: Option<ReversePcsConnection>,
+    pub(super) bpc: Option<Arc<BpcStage>>,
     pub(super) options: TransformOptions,
     algorithms: AlgorithmProfile,
 }
@@ -366,11 +368,6 @@ impl Transform {
                 "CMYK output transforms require RGB input",
             ));
         }
-        if options.black_point_compensation {
-            return Err(TransformError::UnsupportedProfileFeature(
-                "black point compensation requires a profile black-point stage",
-            ));
-        }
         let input_route = plan_route_with_policy(
             input,
             TransformDirection::DeviceToPcs,
@@ -385,6 +382,37 @@ impl Transform {
             limits,
             OwnerPolicy::TransformStage,
         )?;
+        if options.black_point_compensation {
+            const HEADER_D50: [u8; 12] = [0, 0, 0xf6, 0xd6, 0, 1, 0, 0, 0, 0, 0xd3, 0x2d];
+            if options.rendering_intent != RenderingIntent::RelativeColorimetric
+                || input.color_space() != super::profile::ColorSpace::Rgb
+                || output.color_space() != super::profile::ColorSpace::Rgb
+                || input.pcs() != Pcs::Xyz
+                || output.pcs() != Pcs::Xyz
+                || !input_route.is_matrix()
+                || !output_route.is_matrix()
+                || input.bytes().get(68..80) != Some(HEADER_D50.as_slice())
+                || output.bytes().get(68..80) != Some(HEADER_D50.as_slice())
+            {
+                return Err(TransformError::UnsupportedProfileFeature(
+                    "BPC requires relative RGB XYZ matrix routes with D50 PCS headers",
+                ));
+            }
+            // The destination black is estimated in its forward direction.
+            // Do not silently ignore a selected A2B1/A2B0 LUT or malformed tag.
+            let forward = plan_route_with_policy(
+                output,
+                TransformDirection::DeviceToPcs,
+                RenderingIntent::RelativeColorimetric,
+                limits,
+                OwnerPolicy::TransformStage,
+            )?;
+            if !forward.is_matrix() {
+                return Err(TransformError::UnsupportedProfileFeature(
+                    "BPC destination forward route must be matrix",
+                ));
+            }
+        }
         if output.color_space() == super::profile::ColorSpace::Cmyk
             && matches!(
                 options.rendering_intent,
@@ -465,14 +493,55 @@ impl Transform {
             options.rendering_intent,
         )?;
         let mut budget = CompileBudget::new(limits);
-        admit_pair(&input_route, &output_route, &mut budget)?;
-        let pair = materialize_pair(
-            input_route,
-            output_route,
-            &mut budget,
-            input.limits(),
-            output.limits(),
-        )?;
+        let admission = budget.checkpoint();
+        let admitted = (|| {
+            admit_pair(&input_route, &output_route, &mut budget)?;
+            if options.black_point_compensation {
+                budget.admit_storage(std::mem::size_of::<BpcStage>(), "BPC stage")?;
+            }
+            Ok::<(), TransformError>(())
+        })();
+        if let Err(error) = admitted {
+            budget.rollback(admission);
+            return Err(error);
+        }
+        let checkpoint = budget.checkpoint();
+        let built = (|| {
+            let pair = materialize_pair(
+                input_route,
+                output_route,
+                &mut budget,
+                input.limits(),
+                output.limits(),
+            )?;
+            let bpc = if options.black_point_compensation {
+                let stage = BpcStage::new(
+                    pair.input
+                        .matrix
+                        .as_deref()
+                        .ok_or(TransformError::InvalidProfile("missing BPC source matrix"))?,
+                    pair.output
+                        .matrix
+                        .as_deref()
+                        .ok_or(TransformError::InvalidProfile(
+                            "missing BPC destination matrix",
+                        ))?,
+                )?;
+                let bytes = std::mem::size_of::<BpcStage>();
+                budget.commit_owned(bytes, bytes, "BPC stage")?;
+                Some(Arc::new(stage))
+            } else {
+                None
+            };
+            Ok::<_, TransformError>((pair, bpc))
+        })();
+        let (pair, bpc) = match built {
+            Ok(value) => value,
+            Err(error) => {
+                budget.rollback(checkpoint);
+                return Err(error);
+            }
+        };
         let input_stage = pair.input;
         let output_stage = pair.output;
         let input_matrix = input_stage.matrix.clone();
@@ -497,9 +566,15 @@ impl Transform {
             input_raw_device_class: input.raw_device_class(),
             output_raw_device_class: output.raw_device_class(),
             reverse_pcs_connection,
+            bpc,
             options,
             algorithms: AlgorithmProfile::default(),
         })
+    }
+
+    /// Read-only estimates and coefficients, present only when BPC is enabled.
+    pub fn bpc_diagnostics(&self) -> Option<BpcDiagnostics> {
+        self.bpc.as_ref().map(|stage| stage.diagnostics())
     }
 
     pub fn input_route_info(&self) -> RouteInfo {
@@ -673,6 +748,9 @@ impl Transform {
                     src,
                     self.options.clamp,
                 );
+                if let Some(bpc) = &self.bpc {
+                    bpc.apply(&mut xyz)?;
+                }
                 if self.options.rendering_intent == RenderingIntent::AbsoluteColorimetric {
                     xyz = absolute_pcs_xyz(xyz, self.input_white, self.output_white)?;
                 }

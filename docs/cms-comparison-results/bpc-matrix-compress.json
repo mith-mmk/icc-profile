@@ -1,0 +1,53 @@
+{
+  "source": "synthetic-matrix-black-1311.icc",
+  "source_sha256": "8c0276c9776296d00ccf9948013aff12913acaa42af2f32b59d62aa0ebea791f",
+  "destination": "synthetic-matrix-black-5243.icc",
+  "destination_sha256": "72823d22df75ff045c55a1e7266bf33ed8460e32c52139463f311b11a0825dba",
+  "lcms_version": 2190,
+  "lcms_binary_sha256": "9d97fbd455063b3d06d07d93ab84aab62c38746329574f75984b25b7b125a7c2",
+  "moxcms_version": "0.9.2",
+  "icc_3d_interpolation": "tetrahedral",
+  "mox_requested_3d_interpolation": "tetrahedral",
+  "lcms_interpolation": "engine-selected",
+  "intent": "relative_colorimetric",
+  "black_point_compensation": "on",
+  "lcms_flags": "0x2140 NOOPTIMIZE|NOCACHE|BLACKPOINTCOMPENSATION",
+  "pixels": 4913,
+  "input_channels": 3,
+  "output_channels": 3,
+  "tolerance_codes": 1024,
+  "note": "screening tolerance, not a DeltaE accuracy guarantee",
+  "status": "icc parse=ok\nicc transform=ok\nmox skipped=BPC option unavailable in this public-API harness; no disabled-BPC comparison\npixels=4913\n",
+  "comparison": {
+    "icc": {
+      "max_per_channel_codes": [
+        4,
+        4,
+        4
+      ],
+      "worst_input_codes": [
+        0,
+        0,
+        0
+      ],
+      "worst_actual_codes": [
+        0,
+        0,
+        0
+      ],
+      "worst_reference_codes": [
+        4,
+        4,
+        4
+      ],
+      "max_abs_codes": 4,
+      "mean_abs_codes": 0.5490196078431373,
+      "max_normalized": 6.103608758678569e-05,
+      "mean_normalized": 8.377502217794115e-06,
+      "pixels_over_tolerance": 0,
+      "exact_match_pixels": 1210,
+      "pixels_over_32_codes": 0,
+      "pixels_over_256_codes": 0
+    }
+  }
+}

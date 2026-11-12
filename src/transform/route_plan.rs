@@ -101,9 +101,17 @@ pub(super) fn plan_route_with_policy(
         let kind = tag.and_then(|data| data.get(..4));
         let supported = (version == 2 && kind == Some(&b"mft2"[..]))
             || (version == 4 && kind == Some(&b"mAB "[..]));
-        if !a_to_b || intent == RenderingIntent::AbsoluteColorimetric || !supported {
+        let absolute = intent == RenderingIntent::AbsoluteColorimetric;
+        if !a_to_b
+            || !supported
+            || (absolute
+                && (owner_policy != OwnerPolicy::TransformStage
+                    || selection.signature != Some(*b"A2B1")
+                    || selection.used_fallback
+                    || profile.raw_device_class() != *b"prtr"))
+        {
             return Err(TransformError::UnsupportedProfileFeature(
-                "CMYK requires v2 mft2 or v4 mAB DeviceToPcs with perceptual, relative, or saturation intent",
+                "CMYK requires v2 mft2 or v4 mAB DeviceToPcs; absolute requires an explicit printer A2B1 composite route",
             ));
         }
     }

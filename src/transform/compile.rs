@@ -385,6 +385,27 @@ impl Transform {
                 "matrix/TRC non-relative intent requires media white",
             ));
         }
+        if input.color_space() == super::profile::ColorSpace::Cmyk
+            && options.rendering_intent == RenderingIntent::AbsoluteColorimetric
+        {
+            // ICC v2 6.4.25 / Annex A and v4 6.3.2.2 / 9.2.36:
+            // A2B1 and wtpt are already in adapted PCS coordinates. The
+            // existing XYZ media-white bridge is applied once, not chad again.
+            // Only the fully adapted D50 matrix display case is supported;
+            // partial-adaptation simulation and arbitrary display whites are not.
+            const ENCODED_D50: [f32; 3] = [63190.0 / 65536.0, 1.0, 54061.0 / 65536.0];
+            const HEADER_D50: [u8; 12] = [0, 0, 0xf6, 0xd6, 0, 1, 0, 0, 0, 0, 0xd3, 0x2d];
+            if !output_route.is_matrix()
+                || output.raw_device_class() != *b"mntr"
+                || output_white != Some(ENCODED_D50)
+                || input.bytes().get(68..80) != Some(HEADER_D50.as_slice())
+                || output.bytes().get(68..80) != Some(HEADER_D50.as_slice())
+            {
+                return Err(TransformError::UnsupportedProfileFeature(
+                    "CMYK absolute requires D50 PCS headers and a D50 RGB matrix/TRC monitor",
+                ));
+            }
+        }
         let reverse_pcs_connection = select_reverse_pcs_connection(
             &input_route,
             &output_route,

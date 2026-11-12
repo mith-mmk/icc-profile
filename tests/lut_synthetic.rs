@@ -2049,3 +2049,278 @@ fn cmyk_intent_fallback_is_visible_and_malformed_selected_tag_is_not_hidden() {
         assert!(Transform::new(&source,&destination,TransformOptions{black_point_compensation:true,..Default::default()}).is_err());
     }
 }
+
+const ABSOLUTE_D50: [f32; 3] = [63190.0 / 65536.0, 1.0, 54061.0 / 65536.0];
+
+fn with_d50_header(mut bytes: Vec<u8>) -> Vec<u8> {
+    for (i, code) in [63190, 65536, 54061].into_iter().enumerate() {
+        u32_at(&mut bytes, 68 + 4 * i, code);
+    }
+    bytes
+}
+
+fn cmyk_absolute_fixture(version: u8, pcs: [u8; 4], codes: [u16; 3], white: [f32; 3]) -> Vec<u8> {
+    let original = if version == 2 {
+        cmyk_mft2_profile()
+    } else {
+        cmyk_mab_profile()
+    };
+    let mut tag = original[144..].to_vec();
+    let (start, corners) = if version == 2 { (68, 16) } else { (52, 48) };
+    for chunk in tag[start..start + corners * 6].chunks_exact_mut(6) {
+        for (sample, code) in chunk.chunks_exact_mut(2).zip(codes) {
+            sample.copy_from_slice(&code.to_be_bytes());
+        }
+    }
+    // A non-identity chad is intentional: these LUT/white coordinates have
+    // already been adapted, so applying it again must change neither result.
+    let mut chad = vec![0; 44];
+    chad[..4].copy_from_slice(b"sf32");
+    for i in 0..3 {
+        u32_at(&mut chad, 8 + i * 16, 0x0001_8000);
+    }
+    let mut bytes = profile_with_pcs(
+        *b"CMYK",
+        pcs,
+        vec![
+            (*b"A2B1", tag),
+            (*b"wtpt", xyz(white[0], white[1], white[2])),
+            (*b"chad", chad),
+        ],
+    );
+    bytes[8] = version;
+    bytes[12..16].copy_from_slice(b"prtr");
+    with_d50_header(bytes)
+}
+
+fn absolute_options() -> TransformOptions {
+    TransformOptions {
+        rendering_intent: RenderingIntent::AbsoluteColorimetric,
+        clamp: false,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn cmyk_absolute_xyz_and_lab_apply_white_bridge_exactly_once() {
+    for destination_version in [2, 4] {
+        for with_chad in [false, true] {
+            let mut destination_bytes = with_d50_header(d50_matrix_rgb_profile());
+            destination_bytes[8] = destination_version;
+            if with_chad {
+                // Matrix colorants and wtpt are already PCS-adapted. A
+                // destination chad must not produce a second adaptation.
+                let mut chad = vec![0; 44];
+                chad[..4].copy_from_slice(b"sf32");
+                for i in 0..3 {
+                    u32_at(&mut chad, 8 + i * 16, 0x0001_8000);
+                }
+                destination_bytes = replace_fixture_tag(&destination_bytes, *b"chad", Some(chad));
+            }
+            let destination = Profile::parse(&destination_bytes).unwrap();
+            for version in [2, 4] {
+                for pcs in [*b"XYZ ", *b"Lab "] {
+                    for white_sample in [false, true] {
+                        let codes = if pcs == *b"XYZ " {
+                            if white_sample {
+                                [31595, 32768, 27030]
+                            } else {
+                                [8192, 12288, 16384]
+                            }
+                        } else if version == 2 {
+                            if white_sample {
+                                [65280, 32768, 32768]
+                            } else {
+                                [32640, 36864, 28672]
+                            }
+                        } else if white_sample {
+                            [65535, 32896, 32896]
+                        } else {
+                            [32896, 37008, 28784]
+                        };
+                        let white = [0.75, 0.875, 0.625];
+                        let source =
+                            Profile::parse(&cmyk_absolute_fixture(version, pcs, codes, white))
+                                .unwrap();
+                        assert!(source
+                            .compile(
+                                TransformDirection::DeviceToPcs,
+                                RenderingIntent::AbsoluteColorimetric,
+                                TransformLimits::default()
+                            )
+                            .is_err());
+                        let transform =
+                            Transform::new(&source, &destination, absolute_options()).unwrap();
+                        assert_eq!(transform.input_route_info().selected_tag(), Some(*b"A2B1"));
+                        assert!(!transform.input_route_info().used_fallback());
+                        assert_eq!(
+                            transform.input_route_info().requested_intent(),
+                            RenderingIntent::AbsoluteColorimetric
+                        );
+                        let physical = if pcs == *b"XYZ " {
+                            codes.map(|v| v as f64 / 32768.0)
+                        } else {
+                            // Independent ICC physical Lab inverse, evaluated in f64.
+                            let [l, a, b] = if version == 2 {
+                                [
+                                    codes[0] as f64 * 100.0 / 65280.0,
+                                    codes[1] as f64 / 256.0 - 128.0,
+                                    codes[2] as f64 / 256.0 - 128.0,
+                                ]
+                            } else {
+                                [
+                                    codes[0] as f64 * 100.0 / 65535.0,
+                                    codes[1] as f64 / 257.0 - 128.0,
+                                    codes[2] as f64 / 257.0 - 128.0,
+                                ]
+                            };
+                            let fy = (l + 16.0) / 116.0;
+                            let f = |t: f64| {
+                                if t.powi(3) > 216.0 / 24389.0 {
+                                    t.powi(3)
+                                } else {
+                                    (116.0 * t - 16.0) / (24389.0 / 27.0)
+                                }
+                            };
+                            [
+                                f(fy + a / 500.0) * 0.9642,
+                                f(fy),
+                                f(fy - b / 200.0) * 0.8249,
+                            ]
+                        };
+                        let mut output = [0.0; 3];
+                        transform
+                            .transform_f32_atomic(&[0.2, 0.4, 0.6, 0.8], &mut output)
+                            .unwrap();
+                        for i in 0..3 {
+                            let expected =
+                                physical[i] * white[i] as f64 / (ABSOLUTE_D50[i] as f64).powi(2);
+                            assert!(
+                                (output[i] as f64 - expected).abs() < 3e-6,
+                                "v{version} {pcs:?} {output:?} expected channel {i}: {expected}"
+                            );
+                        }
+                        atomic_contract::check_atomic_contract(&transform);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn fixture_tag(bytes: &[u8], signature: [u8; 4]) -> Option<&[u8]> {
+    let read = |at| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+    for i in 0..read(128) {
+        let at = 132 + i * 12;
+        if bytes[at..at + 4] == signature {
+            let start = read(at + 4);
+            return Some(&bytes[start..start + read(at + 8)]);
+        }
+    }
+    None
+}
+
+fn replace_fixture_tag(bytes: &[u8], signature: [u8; 4], replacement: Option<Vec<u8>>) -> Vec<u8> {
+    let mut tags = Vec::new();
+    for sig in [
+        *b"A2B0", *b"A2B1", *b"wtpt", *b"chad", *b"rXYZ", *b"gXYZ", *b"bXYZ", *b"rTRC", *b"gTRC",
+        *b"bTRC", *b"B2A1",
+    ] {
+        if sig == signature {
+            if let Some(ref data) = replacement {
+                tags.push((sig, data.clone()));
+            }
+        } else if let Some(data) = fixture_tag(bytes, sig) {
+            tags.push((sig, data.to_vec()));
+        }
+    }
+    let mut result = profile_with_pcs(
+        bytes[16..20].try_into().unwrap(),
+        bytes[20..24].try_into().unwrap(),
+        tags,
+    );
+    result[8..128].copy_from_slice(&bytes[8..128]);
+    result
+}
+
+#[test]
+fn cmyk_absolute_rejects_unsupported_pairings_and_incomplete_metadata() {
+    let destination = with_d50_header(d50_matrix_rgb_profile());
+    for version in [2, 4] {
+        let source = cmyk_absolute_fixture(version, *b"XYZ ", [8192; 3], ABSOLUTE_D50);
+        let rejects = |src: &[u8], dst: &[u8]| {
+            assert!(Transform::new(
+                &Profile::parse(src).unwrap(),
+                &Profile::parse(dst).unwrap(),
+                absolute_options()
+            )
+            .is_err());
+        };
+        let tag = fixture_tag(&source, *b"A2B1").unwrap().to_vec();
+        let missing = replace_fixture_tag(&source, *b"A2B1", None);
+        rejects(&missing, &destination);
+        let fallback = replace_fixture_tag(&missing, *b"A2B0", Some(tag));
+        rejects(&fallback, &destination);
+        let malformed = replace_fixture_tag(&fallback, *b"A2B1", Some(b"bad!".to_vec()));
+        rejects(&malformed, &destination);
+        for src_side in [false, true] {
+            for replacement in [
+                None,
+                Some(xyz(0.0, 1.0, 0.8)),
+                Some(xyz(-0.5, 1.0, 0.8)),
+                Some(b"bad!".to_vec()),
+            ] {
+                if src_side {
+                    rejects(
+                        &replace_fixture_tag(&source, *b"wtpt", replacement),
+                        &destination,
+                    );
+                } else {
+                    rejects(
+                        &source,
+                        &replace_fixture_tag(&destination, *b"wtpt", replacement),
+                    );
+                }
+            }
+            for class in [*b"scnr", *b"spac", *b"link"] {
+                let mut bad = if src_side {
+                    source.clone()
+                } else {
+                    destination.clone()
+                };
+                bad[12..16].copy_from_slice(&class);
+                if src_side {
+                    rejects(&bad, &destination);
+                } else {
+                    rejects(&source, &bad);
+                }
+            }
+            for value in [0, 63189, 63191] {
+                let mut bad = if src_side {
+                    source.clone()
+                } else {
+                    destination.clone()
+                };
+                u32_at(&mut bad, 68, value);
+                if src_side {
+                    rejects(&bad, &destination);
+                } else {
+                    rejects(&source, &bad);
+                }
+            }
+        }
+        rejects(
+            &source,
+            &replace_fixture_tag(&destination, *b"wtpt", Some(xyz(0.9505, 1.0, 1.089))),
+        );
+        // A selected B2A1 must not silently fall through to valid matrix tags.
+        rejects(
+            &source,
+            &replace_fixture_tag(&destination, *b"B2A1", Some(identity_mft2())),
+        );
+        rejects(
+            &source,
+            &replace_fixture_tag(&destination, *b"B2A1", Some(b"bad!".to_vec())),
+        );
+    }
+}

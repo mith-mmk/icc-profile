@@ -1,0 +1,37 @@
+{
+  "source": "PSOcoated_v3.icc",
+  "source_sha256": "c30ad2c01e8f93135ec7682c535e0a81bc2d177c301e196376c5f5838b5c8e86",
+  "destination": "sRGB2014.icc",
+  "destination_sha256": "384b832de3412066743b52a75ee906b6fb9fb8d9e09e936fc2c43223815c6e0a",
+  "lcms_version": 2190,
+  "lcms_binary_sha256": "9d97fbd455063b3d06d07d93ab84aab62c38746329574f75984b25b7b125a7c2",
+  "moxcms_version": "0.9.2",
+  "intent": "absolute_colorimetric",
+  "lcms_flags": "NOOPTIMIZE|NOCACHE (0x0140)",
+  "pixels": 6561,
+  "tolerance_codes": 1024,
+  "note": "screening tolerance, not a DeltaE accuracy guarantee",
+  "status": "icc parse=ok\nicc transform=ok\nmox parse=ok\nmox options=TransformOptions { rendering_intent: AbsoluteColorimetric, allow_use_cicp_transfer: false, prefer_fixed_point: false, interpolation_method: Tetrahedral, barycentric_weight_scale: Low }\nmox transform=ok\npixels=6561\n",
+  "comparison": {
+    "icc": {
+      "max_abs_codes": 74,
+      "mean_abs_codes": 9.435451912818168,
+      "max_normalized": 0.0011291676203555353,
+      "mean_normalized": 0.00014397576734291855,
+      "pixels_over_tolerance": 0,
+      "exact_match_pixels": 67,
+      "pixels_over_32_codes": 942,
+      "pixels_over_256_codes": 0
+    },
+    "mox": {
+      "max_abs_codes": 7736,
+      "mean_abs_codes": 1048.1117207742723,
+      "max_normalized": 0.11804379339284352,
+      "mean_normalized": 0.015993159697478786,
+      "pixels_over_tolerance": 5256,
+      "exact_match_pixels": 0,
+      "pixels_over_32_codes": 6561,
+      "pixels_over_256_codes": 6561
+    }
+  }
+}

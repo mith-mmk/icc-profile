@@ -74,14 +74,14 @@ fn signature_range_and_description_boundary_keep_successful_outputs() {
 }
 
 #[test]
-fn description_shift_and_nul_behavior_are_not_redesigned() {
+fn description_ascii_uses_its_own_field_and_preserves_nuls() {
     let mut data = tag(b"desc", 28);
     data[8..12].copy_from_slice(&4u32.to_be_bytes());
     data[12..16].copy_from_slice(b"old\0");
     data[16..20].copy_from_slice(b"en\0\0");
     match Data::get("desc", &data, data.len(), 0x40000000).unwrap() {
         Data::Descriptor(value) => {
-            assert_eq!(value.ascii_string, "en\0\0");
+            assert_eq!(value.ascii_string, "old\0");
             assert_eq!(value.lang, "en\0\0");
             assert_eq!(value.local_string, "");
         }

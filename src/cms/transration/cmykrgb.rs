@@ -31,9 +31,7 @@ pub fn try_cmyk_to_rgb_lut16(
     super::lut_convert::check_whitepoint(wp)?;
     let (l, a, b) = try_cmyk_to_lab_lut16(c, m, y, k, lut)?;
     let (x, y, z) = lab_to_xyz_wp(l, a, b, wp);
-    let (r, g, b) = xyz_to_rgb(x, y, z);
-
-    Ok((r, g, b))
+    checked_xyz_to_rgb(x, y, z)
 }
 
 /// Compatibility wrapper for [`try_cmyk_to_rgb_lut8`].
@@ -58,11 +56,29 @@ pub fn try_cmyk_to_rgb_lut8(
     super::lut_convert::check_whitepoint(wp)?;
     let (l, a, b) = try_cmyk_to_lab_lut8(c, m, y, k, lut)?;
     let (x, y, z) = lab_to_xyz_wp(l, a, b, wp);
-    let (r, g, b) = xyz_to_rgb(x, y, z);
-
-    Ok((r, g, b))
+    checked_xyz_to_rgb(x, y, z)
 }
 
+// Preserve the legacy matrix and rounding, but reject overflow before integer casts.
+fn checked_xyz_to_rgb(x: f64, y: f64, z: f64) -> Result<(u8, u8, u8)> {
+    let invalid = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Non-finite RGB conversion intermediate",
+        )
+    };
+    if ![x, y, z].iter().all(|v| v.is_finite()) {
+        return Err(invalid());
+    }
+    let (r, g, b) = xyz_to_rgb_to_f64(x, y, z);
+    if ![r, g, b].iter().all(|v| v.is_finite()) {
+        return Err(invalid());
+    }
+    // Clip finite out-of-gamut values before scaling to avoid overflow in *255.
+    // For finite values this equals the legacy scale/cast/clamp sequence.
+    let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+    Ok((byte(r), byte(g), byte(b)))
+}
 
 pub fn cmyk_to_rgb_from_profile(c:u8,m:u8,y:u8,k:u8,decoded:&DecodedICCProfile) -> (u8,u8,u8) {
     if decoded.color_space == 0x434d594b {  // CMYK

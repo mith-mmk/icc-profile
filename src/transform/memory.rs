@@ -104,8 +104,9 @@ impl Transform {
     /// Return the checked resident size of the source profiles and immutable
     /// CMS stages held by this transform. Shared profile/matrix/LUT `Arc`
     /// allocations are counted once. Build peak additionally includes temporary
-    /// CMYK BPC reverse tables, which are discarded before publication. For
-    /// that route the compile-byte limit must cover build_peak_bytes minus
+    /// CMYK BPC auxiliary tables and the bounded output-estimator ramp, which
+    /// are discarded before publication. For BPC routes the compile-byte limit
+    /// must cover build_peak_bytes minus
     /// profile_bytes, not just the retained compiled_bytes.
     pub fn memory_usage(&self) -> Result<TransformMemory, TransformError> {
         let mut total = 0usize;
@@ -150,6 +151,13 @@ impl Transform {
             total = total
                 .checked_add(size_of::<super::bpc::CmykBpcStage>())
                 .ok_or(TransformError::ResourceLimit("CMYK BPC memory accounting"))?;
+        }
+        if self.cmyk_output_bpc.is_some() {
+            total = total
+                .checked_add(size_of::<super::bpc::CmykOutputBpcStage>())
+                .ok_or(TransformError::ResourceLimit(
+                    "output BPC memory accounting",
+                ))?;
         }
         let profile_bytes = if Arc::ptr_eq(&self.input_profile.0, &self.output_profile.0) {
             profile_memory(&self.input_profile.0)?

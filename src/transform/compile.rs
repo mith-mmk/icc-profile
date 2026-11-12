@@ -1,5 +1,6 @@
 use super::algorithm::AlgorithmProfile;
 use super::bpc::{BpcDiagnostics, BpcStage, CmykBpcDiagnostics, CmykBpcStage};
+use super::bpc::{CmykOutputBpcDiagnostics, CmykOutputBpcStage, OUTPUT_RAMP_BYTES};
 use super::compile_budget::CompileBudget;
 use super::curve::inverse_curve_checked;
 use super::error::TransformError;
@@ -307,6 +308,7 @@ pub struct Transform {
     reverse_pcs_connection: Option<ReversePcsConnection>,
     pub(super) bpc: Option<Arc<BpcStage>>,
     pub(super) cmyk_bpc: Option<Arc<CmykBpcStage>>,
+    pub(super) cmyk_output_bpc: Option<Arc<CmykOutputBpcStage>>,
     pub(super) bpc_auxiliary_bytes: usize,
     pub(super) options: TransformOptions,
     algorithms: AlgorithmProfile,
@@ -385,20 +387,57 @@ impl Transform {
             OwnerPolicy::TransformStage,
         )?;
         let mut bpc_auxiliary_route = None;
+        let mut output_bpc_routes = None;
         if options.black_point_compensation {
             const HEADER_D50: [u8; 12] = [0, 0, 0xf6, 0xd6, 0, 1, 0, 0, 0, 0, 0xd3, 0x2d];
             if options.rendering_intent != RenderingIntent::RelativeColorimetric
-                || output.color_space() != super::profile::ColorSpace::Rgb
-                || output.pcs() != Pcs::Xyz
-                || !output_route.is_matrix()
                 || input.bytes().get(68..80) != Some(HEADER_D50.as_slice())
                 || output.bytes().get(68..80) != Some(HEADER_D50.as_slice())
             {
                 return Err(TransformError::UnsupportedProfileFeature(
-                    "BPC requires relative intent, an RGB XYZ matrix destination and D50 PCS headers",
+                    "BPC requires relative intent and D50 PCS headers",
                 ));
             }
-            if input.color_space() == super::profile::ColorSpace::Cmyk {
+            if output.color_space() == super::profile::ColorSpace::Cmyk {
+                if input.color_space() != super::profile::ColorSpace::Rgb
+                    || input.pcs() != Pcs::Xyz
+                    || !input_route.is_matrix()
+                    || output.raw_version()[0] != 4
+                    || output.raw_device_class() != *b"prtr"
+                    || output_route.route_info().selected_tag() != Some(*b"B2A1")
+                    || output_route.route_info().used_fallback()
+                {
+                    return Err(TransformError::UnsupportedProfileFeature(
+                        "output BPC requires RGB XYZ matrix and explicit v4 printer B2A1",
+                    ));
+                }
+                let forward = plan_route_with_policy(
+                    output,
+                    TransformDirection::DeviceToPcs,
+                    RenderingIntent::RelativeColorimetric,
+                    limits,
+                    OwnerPolicy::TransformStage,
+                )?;
+                let reverse = plan_route_with_policy(
+                    output,
+                    TransformDirection::PcsToDevice,
+                    RenderingIntent::Perceptual,
+                    limits,
+                    OwnerPolicy::TransformStage,
+                )?;
+                if !forward.is_lut()
+                    || forward.route_info().selected_tag() != Some(*b"A2B1")
+                    || forward.route_info().used_fallback()
+                    || !reverse.is_lut()
+                    || reverse.route_info().selected_tag() != Some(*b"B2A0")
+                    || reverse.route_info().used_fallback()
+                {
+                    return Err(TransformError::UnsupportedProfileFeature(
+                        "output BPC requires explicit A2B1 and B2A0",
+                    ));
+                }
+                output_bpc_routes = Some((forward, reverse));
+            } else if input.color_space() == super::profile::ColorSpace::Cmyk {
                 if input.raw_version()[0] != 4
                     || input.raw_device_class() != *b"prtr"
                     || !input_route.is_lut()
@@ -442,7 +481,9 @@ impl Transform {
                 limits,
                 OwnerPolicy::TransformStage,
             )?;
-            if !forward.is_matrix() {
+            if output_bpc_routes.is_none()
+                && (output.pcs() != Pcs::Xyz || !output_route.is_matrix() || !forward.is_matrix())
+            {
                 return Err(TransformError::UnsupportedProfileFeature(
                     "BPC destination forward route must be matrix",
                 ));
@@ -531,7 +572,14 @@ impl Transform {
         let admission = budget.checkpoint();
         let admitted = (|| {
             admit_pair(&input_route, &output_route, &mut budget)?;
-            if let Some(auxiliary) = &bpc_auxiliary_route {
+            if let Some((forward, reverse)) = &output_bpc_routes {
+                forward.admit(&mut budget)?;
+                reverse.admit(&mut budget)?;
+                budget.admit_storage(
+                    std::mem::size_of::<CmykOutputBpcStage>() + OUTPUT_RAMP_BYTES,
+                    "CMYK output BPC stage and ramp",
+                )?;
+            } else if let Some(auxiliary) = &bpc_auxiliary_route {
                 auxiliary.admit(&mut budget)?;
                 budget.admit_storage(std::mem::size_of::<CmykBpcStage>(), "CMYK BPC stage")?;
             } else if options.black_point_compensation {
@@ -582,7 +630,52 @@ impl Transform {
             } else {
                 (None, 0)
             };
-            let bpc = if options.black_point_compensation && cmyk_bpc.is_none() {
+            let (cmyk_output_bpc, output_auxiliary_bytes) = if let Some((forward, reverse)) =
+                output_bpc_routes
+            {
+                let forward = forward.materialize(&mut budget, output.limits())?;
+                let reverse = reverse.materialize(&mut budget, output.limits())?;
+                validate_compiled_direction(&forward)?;
+                validate_compiled_direction(&reverse)?;
+                use super::algorithm::ClutInterpolation3D::{Tetrahedral, Trilinear};
+                let estimates = [
+                    cmyk_output_estimate(&forward, &reverse, &pair.output, Tetrahedral)?,
+                    cmyk_output_estimate(&forward, &reverse, &pair.output, Trilinear)?,
+                ];
+                let stage = CmykOutputBpcStage::new(
+                    pair.input
+                        .matrix
+                        .as_deref()
+                        .ok_or(TransformError::InvalidProfile(
+                            "missing output BPC source matrix",
+                        ))?,
+                    estimates,
+                )?;
+                let auxiliary_bytes = super::memory::lut_memory(forward.lut.as_deref().ok_or(
+                    TransformError::InvalidProfile("missing output BPC forward LUT"),
+                )?)?
+                .checked_add(super::memory::lut_memory(reverse.lut.as_deref().ok_or(
+                    TransformError::InvalidProfile("missing output BPC perceptual LUT"),
+                )?)?)
+                .and_then(|bytes| bytes.checked_add(OUTPUT_RAMP_BYTES))
+                .ok_or(TransformError::ResourceLimit("output BPC auxiliary memory"))?;
+                let bytes = std::mem::size_of::<CmykOutputBpcStage>();
+                budget.commit_owned(
+                    bytes + OUTPUT_RAMP_BYTES,
+                    bytes + OUTPUT_RAMP_BYTES,
+                    "CMYK output BPC stage and ramp",
+                )?;
+                (Some(Arc::new(stage)), auxiliary_bytes)
+            } else {
+                (None, 0)
+            };
+            let bpc_auxiliary_bytes = bpc_auxiliary_bytes
+                .checked_add(output_auxiliary_bytes)
+                .ok_or(TransformError::ResourceLimit("BPC auxiliary memory"))?;
+            let bpc = if options.black_point_compensation
+                && cmyk_bpc.is_none()
+                && cmyk_output_bpc.is_none()
+            {
                 let stage = BpcStage::new(
                     pair.input
                         .matrix
@@ -601,9 +694,9 @@ impl Transform {
             } else {
                 None
             };
-            Ok::<_, TransformError>((pair, bpc, cmyk_bpc, bpc_auxiliary_bytes))
+            Ok::<_, TransformError>((pair, bpc, cmyk_bpc, cmyk_output_bpc, bpc_auxiliary_bytes))
         })();
-        let (pair, bpc, cmyk_bpc, bpc_auxiliary_bytes) = match built {
+        let (pair, bpc, cmyk_bpc, cmyk_output_bpc, bpc_auxiliary_bytes) = match built {
             Ok(value) => value,
             Err(error) => {
                 budget.rollback(checkpoint);
@@ -636,12 +729,19 @@ impl Transform {
             reverse_pcs_connection,
             bpc,
             cmyk_bpc,
+            cmyk_output_bpc,
             bpc_auxiliary_bytes,
             options,
             algorithms: AlgorithmProfile::default(),
         })
     }
 
+    /// CMYK-output estimates for the selected interpolation; auxiliary LUTs are not retained.
+    pub fn cmyk_output_bpc_diagnostics(&self) -> Option<CmykOutputBpcDiagnostics> {
+        self.cmyk_output_bpc
+            .as_ref()
+            .map(|s| s.diagnostics(self.algorithms.clut_3d()))
+    }
     /// Matrix-only BPC estimates. Returns None for disabled BPC or CMYK BPC;
     /// use cmyk_bpc_diagnostics for full four-channel CMYK estimates.
     pub fn bpc_diagnostics(&self) -> Option<BpcDiagnostics> {
@@ -802,6 +902,9 @@ impl Transform {
                     self.options.clamp,
                 );
                 let mut pcs = xyz;
+                if let Some(bpc) = &self.cmyk_output_bpc {
+                    bpc.apply(&mut pcs, self.algorithms.clut_3d())?;
+                }
                 if let Some(connection) = self.reverse_pcs_connection {
                     connection.apply(&mut pcs)?;
                 }
@@ -1366,3 +1469,45 @@ mod compile_s4_tests;
 #[cfg(test)]
 #[path = "reverse_diagnostics_tests.rs"]
 mod reverse_diagnostics_tests;
+
+fn cmyk_output_estimate(
+    forward: &CompiledDirection,
+    perceptual: &CompiledDirection,
+    relative: &CompiledDirection,
+    interpolation: super::algorithm::ClutInterpolation3D,
+) -> Result<CmykOutputBpcDiagnostics, TransformError> {
+    let initial = cmyk_black_probe(forward, perceptual, interpolation)?;
+    let f = forward
+        .lut
+        .as_deref()
+        .ok_or(TransformError::InvalidProfile(
+            "missing output BPC forward LUT",
+        ))?;
+    let r = relative
+        .lut
+        .as_deref()
+        .ok_or(TransformError::InvalidProfile(
+            "missing output BPC reverse LUT",
+        ))?;
+    let mut ramp = [0.0; 256];
+    for (i, value) in ramp.iter_mut().enumerate() {
+        let mut pcs = [i as f32 * 100.0 / 255.0, 0.0, 0.0];
+        convert_pcs(&mut pcs, Pcs::Lab, relative.pcs)?;
+        encode_lut_pcs(&mut pcs, r.pcs_encoding())?;
+        let mut device = [0.0; 4];
+        r.eval_with_domain(&pcs, &mut device, false, interpolation)?;
+        if device
+            .iter()
+            .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
+        {
+            return Err(TransformError::InvalidProfile(
+                "output BPC ramp outside device domain",
+            ));
+        }
+        f.eval_with_domain(&device, &mut pcs, false, interpolation)?;
+        decode_lut_pcs(&mut pcs, f.pcs_encoding())?;
+        convert_pcs(&mut pcs, forward.pcs, Pcs::Lab)?;
+        *value = pcs[0] as f64;
+    }
+    super::bpc::output_estimate(initial, ramp, interpolation)
+}

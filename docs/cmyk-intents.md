@@ -1,5 +1,8 @@
 # CMYK input intents: first CMS-completeness step
 
+This records the first feature stage. For the subsequently added restricted
+absolute display route, see [cmyk-absolute.md](cmyk-absolute.md).
+
 The display use case prioritizes perceptual and saturation input tables before
 CMYK output or BPC. This change preserves the existing v2 mft2 / v4 mAB,
 four-input to three-PCS, RGB-destination boundary and all resource limits.

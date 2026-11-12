@@ -157,7 +157,7 @@ The checked transform API now accepts v2 CMYK `mft2` and v4 CMYK `mAB` A2B stage
 colorimetric, and saturation display conversion to RGB (or a standalone DeviceToPcs stage).
 Samples are C/M/Y/K, 0 = no ink and 1 = maximum ink; u8/u16 scale to that range.
 Format-specific inversion and YCCK belong to callers. PCS remains D50 XYZ/Lab.
-CMYK output, absolute intent and other CMYK tag types remain unsupported.
+CMYK output and other CMYK tag types remain unsupported. Absolute display is limited to the separately documented printer-to-D50-matrix route.
 
 The 4D CLUT uses all 16 hypercube corners with multilinear interpolation.
 Existing 1D/3D interpolation is unchanged. CMYK mft2 matrices must be identity.
@@ -207,6 +207,15 @@ A2B2 (saturation) for the supported v2 mft2 / v4 mAB display paths. Missing
 A2B1/A2B2 may use A2B0; RouteInfo reports this fallback. A malformed selected
 tag is never replaced by another tag. This executes profile-provided tables,
 not a newly invented gamut mapper or a guarantee of cross-CMS equivalence.
-Absolute CMYK intent, CMYK output, and BPC remain explicit unsupported errors.
+CMYK output and BPC remain explicit unsupported errors. Absolute CMYK display has the narrower scope below.
 Existing non-relative matrix-route media-white requirements remain in force.
 See [intent validation](docs/cmyk-intents.md) for scope and black-box results.
+
+### Absolute CMYK display
+
+Absolute intent is supported only by a composed Transform from a CMYK printer
+with explicit A2B1 (v2 mft2 or v4 mAB) to a D50-white RGB matrix/TRC monitor.
+Both header illuminants must be encoded D50 and both media whites valid.
+A2B0 fallback, LUT output profiles, non-D50 display whites, and standalone
+CMYK absolute CompiledProfile are rejected. Adapted PCS/white values are not
+passed through chad again. See [scope, specification and measurements](docs/cmyk-absolute.md).

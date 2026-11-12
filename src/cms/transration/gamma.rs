@@ -119,6 +119,15 @@ mod tests {
         S15Fixed16Number::new(val)
     }
 
+    #[test]
+    fn output_reservation_failure_returns_error() {
+        let curve = ParametricCurve { funtion_type: 0, vals: vec![s15(1.0)] };
+        let result = crate::allocation_probe::fail_once(3, ||
+            transration_prametic_curve(&[0, 128, 255], 3, curve));
+        assert!(result.is_err());
+        assert_eq!(crate::allocation_probe::failure_hits(), 1);
+    }
+
     // --- type 0x000: y = x^gamma ---
 
     #[test]

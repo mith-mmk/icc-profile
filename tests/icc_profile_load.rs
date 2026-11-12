@@ -51,17 +51,20 @@ const XYZ_: u32 = 0x58595a20;
 // ===========================================================================
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_loads_successfully() {
     let (_icc, _decoded) = load("sRGB_v4_ICC_preference.icc");
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_magic_number() {
     let (icc, _) = load("sRGB_v4_ICC_preference.icc");
     assert_eq!(icc.magicnumber_ascp, ACSP, "magic must be 'acsp'");
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_version() {
     // version 4.20 → 0x04200000
     let (icc, _) = load("sRGB_v4_ICC_preference.icc");
@@ -72,6 +75,7 @@ fn srgb_v4_version() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_device_class_and_colorspace() {
     let (icc, _) = load("sRGB_v4_ICC_preference.icc");
     assert_eq!(icc.device_class, SPAC, "device_class should be 'spac', got '{}'", fourcc(icc.device_class));
@@ -79,12 +83,14 @@ fn srgb_v4_device_class_and_colorspace() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_pcs_is_lab() {
     let (icc, _) = load("sRGB_v4_ICC_preference.icc");
     assert_eq!(icc.pcs, LAB_, "PCS should be 'Lab ', got '{}'", fourcc(icc.pcs));
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_has_required_tags() {
     let (_, decoded) = load("sRGB_v4_ICC_preference.icc");
     // sRGB color space profile に必須のタグ
@@ -94,6 +100,7 @@ fn srgb_v4_has_required_tags() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_data_length_matches() {
     let (icc, _) = load("sRGB_v4_ICC_preference.icc");
     assert_eq!(icc.length as usize, icc.data.len(), "length field must match raw data size");
@@ -104,17 +111,20 @@ fn srgb_v4_data_length_matches() {
 // ===========================================================================
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_monitor_loads_successfully() {
     let (_icc, _decoded) = load("asus_rog_strix_xg309cm.icm");
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_monitor_magic_number() {
     let (icc, _) = load("asus_rog_strix_xg309cm.icm");
     assert_eq!(icc.magicnumber_ascp, ACSP);
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_monitor_version_2() {
     let (icc, _) = load("asus_rog_strix_xg309cm.icm");
     let major = (icc.version >> 24) & 0xFF;
@@ -122,12 +132,14 @@ fn asus_monitor_version_2() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_monitor_device_class_is_mntr() {
     let (icc, _) = load("asus_rog_strix_xg309cm.icm");
     assert_eq!(icc.device_class, MNTR, "device_class should be 'mntr', got '{}'", fourcc(icc.device_class));
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_monitor_colorspace_rgb_pcs_xyz() {
     let (icc, _) = load("asus_rog_strix_xg309cm.icm");
     assert_eq!(icc.color_space, RGB_);
@@ -135,6 +147,7 @@ fn asus_monitor_colorspace_rgb_pcs_xyz() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_monitor_has_trc_and_xyz_tags() {
     let (_, decoded) = load("asus_rog_strix_xg309cm.icm");
     for tag in &["rXYZ", "gXYZ", "bXYZ", "rTRC", "gTRC", "bTRC", "wtpt", "chad"] {
@@ -143,6 +156,7 @@ fn asus_monitor_has_trc_and_xyz_tags() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_monitor_illuminate_approx_d50() {
     use icc_profile::iccprofile::ICCNumber;
     let (icc, _) = load("asus_rog_strix_xg309cm.icm");
@@ -156,35 +170,41 @@ fn asus_monitor_illuminate_approx_d50() {
 // ===========================================================================
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_loads_successfully() {
     let (_icc, _decoded) = load("JapanColor2011Coated.icc");
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_magic_number() {
     let (icc, _) = load("JapanColor2011Coated.icc");
     assert_eq!(icc.magicnumber_ascp, ACSP);
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_device_class_is_prtr() {
     let (icc, _) = load("JapanColor2011Coated.icc");
     assert_eq!(icc.device_class, PRTR, "device_class should be 'prtr', got '{}'", fourcc(icc.device_class));
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_colorspace_is_cmyk() {
     let (icc, _) = load("JapanColor2011Coated.icc");
     assert_eq!(icc.color_space, CMYK, "color_space should be 'CMYK', got '{}'", fourcc(icc.color_space));
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_has_a2b0_lut() {
     let (_, decoded) = load("JapanColor2011Coated.icc");
     assert!(decoded.tags.contains_key("A2B0"), "CMYK profile must have A2B0 LUT");
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_data_length_matches() {
     let (icc, _) = load("JapanColor2011Coated.icc");
     assert_eq!(icc.length as usize, icc.data.len());
@@ -195,17 +215,20 @@ fn japan_color_data_length_matches() {
 // ===========================================================================
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_loads_successfully() {
     let (_icc, _decoded) = load("ycck.icc");
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_magic_number() {
     let (icc, _) = load("ycck.icc");
     assert_eq!(icc.magicnumber_ascp, ACSP);
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_is_cmyk_colorspace() {
     let (icc, _) = load("ycck.icc");
     assert_eq!(icc.color_space, CMYK, "ycck color_space should be CMYK, got '{}'", fourcc(icc.color_space));
@@ -216,24 +239,28 @@ fn ycck_is_cmyk_colorspace() {
 // ===========================================================================
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn sample1_loads_and_magic_ok() {
     let (icc, _) = load("sample1.icc");
     assert_eq!(icc.magicnumber_ascp, ACSP);
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn sample1_data_length_matches() {
     let (icc, _) = load("sample1.icc");
     assert_eq!(icc.length as usize, icc.data.len());
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn sample2_loads_and_magic_ok() {
     let (icc, _) = load("sample2.icc");
     assert_eq!(icc.magicnumber_ascp, ACSP);
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn sample2_data_length_matches() {
     let (icc, _) = load("sample2.icc");
     assert_eq!(icc.length as usize, icc.data.len());
@@ -244,17 +271,20 @@ fn sample2_data_length_matches() {
 // ===========================================================================
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn spec400_loads_successfully() {
     let (_icc, _decoded) = load("Spec400_10_700-IllumA-Abs_2deg.icc");
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn spec400_magic_number() {
     let (icc, _) = load("Spec400_10_700-IllumA-Abs_2deg.icc");
     assert_eq!(icc.magicnumber_ascp, ACSP);
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn spec400_data_length_matches() {
     let (icc, _) = load("Spec400_10_700-IllumA-Abs_2deg.icc");
     assert_eq!(icc.length as usize, icc.data.len());
@@ -283,6 +313,7 @@ fn truncated_header_returns_error() {
 // ===========================================================================
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn spec400_metadata_extraction() {
     let (icc, decoded) = load("Spec400_10_700-IllumA-Abs_2deg.icc");
     
@@ -298,6 +329,7 @@ fn spec400_metadata_extraction() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn sample1_metadata_extraction() {
     let (icc, decoded) = load("sample1.icc");
     
@@ -313,6 +345,7 @@ fn sample1_metadata_extraction() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn sample2_metadata_extraction() {
     let (icc, decoded) = load("sample2.icc");
     

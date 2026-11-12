@@ -1,6 +1,6 @@
 # icc-profile
 
-Pure Rust ICC profile parsing and explicit Gray/RGB color transforms.
+Pure Rust ICC profile parsing and explicit Gray/RGB and limited forward CMYK color transforms.
 
 Version 0.0.7 provides a checked ICC v2/v4 CMS for Gray and
 RGB profiles. The processing core is `f32` and supports D50 PCS, XYZ/Lab,
@@ -11,13 +11,13 @@ stages, 1D interpolation, and tetrahedral 3D interpolation.
 Version 0.0.7 corrects the physical PCS connection between paired LUT stages
 when the destination uses Lab PCS. Matrix destinations continue to use XYZ.
 
-CMYK, N-color, MPE, black-point compensation, and other unsupported routes
+Reverse CMYK, N-color, MPE, black-point compensation, and other unsupported routes
 return `UnsupportedProfileFeature`; there is no simplified color fallback.
 Alpha is not passed to the CMS and must be handled by the caller.
 
 ## Interpolation and LittleCMS compatibility
 
-The 3D CLUT evaluator uses tetrahedral interpolation. LittleCMS 2.16
+The 3D CLUT evaluator defaults to tetrahedral interpolation; AlgorithmProfile can select trilinear interpolation. LittleCMS 2.16
 [selects trilinear interpolation for Lab-PCS output (B2A) LUTs](https://github.com/mm2/Little-CMS/blob/lcms2.16/src/cmsio1.c#L621-L624),
 so matching profiles and rendering intents need not produce identical values.
 
@@ -30,7 +30,7 @@ used relative colorimetric intent, BPC off, and LittleCMS
 Neither method is universally more accurate; results depend on the profile
 and samples. This comparison does not establish an ICC specification violation,
 and numerical comparisons with manufacturer Lab-PCS output profiles remain
-unverified. The current interpolation behavior is unchanged.
+unverified. The default interpolation behavior is unchanged.
 
 ## Example
 
@@ -64,10 +64,11 @@ handling and color space conversions.
 ### Running Unit Tests (No Samples Required)
 
 ```bash
-cargo test --lib
+cargo test --all-targets
+cargo test --doc
 ```
 
-This runs the no-fixture unit and synthetic transform tests.
+This runs the no-fixture unit and synthetic integration tests. External data tests are explicitly ignored, not silently treated as passed. See [CI and opt-in test instructions](docs/ci.md). Rust 1.91 is the supported minimum.
 
 ### Running Full Test Suite (Requires ICC Profiles)
 
@@ -87,10 +88,10 @@ mkdir -p _test_samples
    - **Reference**: `Spec400_10_700-IllumA-Abs_2deg.icc`, `sample1.icc`, `sample2.icc`
      - Source: Color reference database or spectrophotometer software
 
-3. **Run all tests**:
+3. **Run a selected external test explicitly** (missing required files are errors):
 
 ```bash
-cargo test
+cargo test --test icc_profile_load srgb_v4 -- --ignored
 ```
 
 ### Test Coverage
@@ -118,7 +119,7 @@ Trusted sources for ICC profiles:
 
 ## Release boundary
 
-This release is limited to explicit Gray/RGB transforms. Unsupported color
+The 0.1.0 development branch adds relative-colorimetric CMYK to RGB display through v2 mft2 and v4 mAB source profiles. Published 0.0.8 remains unchanged. Unsupported color
 spaces and processing elements fail closed rather than being approximated.
 ## License
 

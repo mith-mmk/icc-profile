@@ -1,3 +1,8 @@
+//! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
+//! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Output reservation failures are returned as errors.
+//! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
+//!
 //! YUV (YCbCr) to RGB color space conversion
 //!
 //! This module provides conversion functions from YUV/YCbCr color space to RGB.
@@ -201,7 +206,8 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
 
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -209,7 +215,7 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
         let cb = buf[ptr + 1] as f64 - 128.0;
         let cr = buf[ptr + 2] as f64 - 128.0;
 
-        let (r,g,b) = matrix.convert_3d(y, cb, cr);
+        let (r,g,b) = matrix.try_convert_3d(y, cb, cr)?;
         let r = (r + 0.5).clamp(0.0, 255.0) as u8;
         let g = (g + 0.5).clamp(0.0, 255.0) as u8;
         let b = (b + 0.5).clamp(0.0, 255.0) as u8;
@@ -245,7 +251,8 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
 pub fn yuv_to_rgba_entries_from_yuv(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient) -> Result<Vec<u8>> {
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 4)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -253,7 +260,7 @@ pub fn yuv_to_rgba_entries_from_yuv(buf: &[u8], entries: usize, mode: &YUVToRGBC
         let cb = buf[ptr + 1] as f64 - 128.0;
         let cr = buf[ptr + 2] as f64 - 128.0;
 
-        let (r,g,b) = matrix.convert_3d(y, cb, cr);
+        let (r,g,b) = matrix.try_convert_3d(y, cb, cr)?;
         let r = (r + 0.5).clamp(0.0, 255.0) as u8;
         let g = (g + 0.5).clamp(0.0, 255.0) as u8;
         let b = (b + 0.5).clamp(0.0, 255.0) as u8;

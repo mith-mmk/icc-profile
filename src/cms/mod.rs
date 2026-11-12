@@ -177,6 +177,29 @@ impl ColorMatrix3D {
         }
     }
 
+    /// Multiply three finite components by a finite matrix without clamping.
+    ///
+    /// Returns `InvalidInput` if any input or matrix coefficient is nonfinite,
+    /// or if arithmetic produces a nonfinite result. Finite out-of-gamut values
+    /// are accepted. Byte callers can apply their existing rounding and clipping
+    /// policy after this check.
+    pub fn try_convert_3d(&self, x: f64, y: f64, z: f64) -> std::io::Result<(f64, f64, f64)> {
+        if ![x, y, z].iter().all(|value| value.is_finite())
+            || !self.e.iter().all(|value| value.is_finite())
+        {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Nonfinite matrix or input"));
+        }
+        let (a, b, c) = self.convert_3d(x, y, z);
+        if ![a, b, c].iter().all(|value| value.is_finite()) {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Nonfinite matrix result"));
+        }
+        Ok((a, b, c))
+    }
+
+    /// Multiply components with ordinary floating-point arithmetic.
+    ///
+    /// This legacy scalar API may return NaN or infinity. Use
+    /// [`Self::try_convert_3d`] when invalid input or overflow must be rejected.
     pub fn convert_3d(&self,x:f64,y:f64,z:f64) -> (f64,f64,f64) {
         let e = self.e;
         let (x,y,z) = (x,y,z);
@@ -229,3 +252,30 @@ impl ColorMatrix3D {
 
 }
 
+
+#[cfg(test)]
+mod matrix_batch_allocation_tests {
+    use super::transration::*;
+    use crate::allocation_probe::{fail_once, failure_hits};
+
+    #[test]
+    fn output_reservation_failures_return_errors_for_all_matrix_batches() {
+        macro_rules! check {
+            ($bytes:expr, $call:expr) => {{
+                let result = fail_once($bytes, || $call);
+                assert!(result.is_err());
+                assert_eq!(failure_hits(), 1);
+            }};
+        }
+        check!(24, rgb_to_xyz_entries_f64(&[128; 3], 1, &RGBToXYZCoefficient::SrgbD65));
+        check!(24, rgba_to_xyz_entries_f64(&[128; 4], 1, &RGBToXYZCoefficient::SrgbD65));
+        check!(3, rgb_to_xyz_entries(&[128; 3], 1, &RGBToXYZCoefficient::SrgbD65));
+        check!(3, rgba_to_xyz_entries(&[128; 4], 1, &RGBToXYZCoefficient::SrgbD65));
+        check!(3, xyz_to_rgb_entries(&[128; 3], 1, &XYZtoRGBCoefficient::SrgbD65));
+        check!(4, xyz_to_rgba_entries(&[128; 4], 1, &XYZtoRGBCoefficient::SrgbD65));
+        check!(3, rgb_to_yuv_entries(&[128; 3], 1, &RGBToYUVCoefficient::Bt601));
+        check!(3, yuv_to_rgba_entries_from_rgb(&[128; 4], 1, &RGBToYUVCoefficient::Bt601));
+        check!(3, yuv_to_rgb_entries(&[128; 3], 1, &YUVToRGBCoefficient::Bt601));
+        check!(4, yuv_to_rgba_entries_from_yuv(&[128; 3], 1, &YUVToRGBCoefficient::Bt601));
+    }
+}

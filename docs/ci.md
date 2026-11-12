@@ -18,6 +18,5 @@ manufacturer-cms-comparison.md for versions, licensing, and reproduction.
 
 Formatting and strict Clippy are not merge gates yet: existing legacy files
 have unrelated formatting/lint debt. Adding them requires a separate cleanup.
-No CI workflow grants write permissions or publishes packages. CLI checks can
-be added when the CLI package exists. Cargo.lock is intentionally not tracked
+No CI workflow grants write permissions or publishes packages. The standalone CLI package is tested with its committed lockfile in every matrix job. Cargo.lock is intentionally not tracked
 for this library; CI exercises compatible dependency resolution on each toolchain.

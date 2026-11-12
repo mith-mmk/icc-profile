@@ -12,7 +12,8 @@ the two LUTs; no new gamut map, reference-black correction or chad operation
 is guessed. Existing relative/absolute output contracts remain unchanged.
 
 Matrix input, v2 or mixed-major input/output, missing/malformed selected tags
-and saturation output remain rejected. Same-major v2 is not sufficient proof
+remain rejected. The subsequent explicit v4 saturation connection is described
+in cmyk-output-saturation.md. Same-major v2 is not sufficient proof
 of a common perceptual reference medium. Saturation rendering is vendor-defined
 and is not silently treated as equivalent to perceptual. These are deliberate
 initial implementation boundaries, not universal restrictions on ICC workflows.

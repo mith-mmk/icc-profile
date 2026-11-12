@@ -39,7 +39,7 @@ pub fn main() -> std::io::Result<()> {
                         let cy = ((y as usize * 255) / 20).clamp(0,255);
                         let ck = ((k as usize * 255) / 20).clamp(0,255);
 
-                        let (l,la,lb) = cmyk_to_lab_lut16(cc as u8,cm as u8,cy as u8,ck as u8,lut16);
+                        let (l,la,lb) = try_cmyk_to_lab_lut16(cc as u8,cm as u8,cy as u8,ck as u8,lut16)?;
                         let (x,y,z) = lab_to_xyz_wp(l,la,lb,&wp);
                         let (r,g,b) = xyz_to_rgb(x,y,z);
                         println!("CMYK {} {} {} {}",cc,cm,cy,ck);

@@ -1,28 +1,66 @@
-
 use crate::cms::transration::*;
 use crate::Mft2;
+use std::io::Result;
 
-pub fn cmyk_to_rgb(y:u8,m:u8,c:u8,k:u8) -> (u8,u8,u8) {
+pub fn cmyk_to_rgb(y: u8, m: u8, c: u8, k: u8) -> (u8, u8, u8) {
     let r = (c as i16 + k as i16 - 255).clamp(0, 255) as u8;
     let g = (m as i16 + k as i16 - 255).clamp(0, 255) as u8;
     let b = (y as i16 + k as i16 - 255).clamp(0, 255) as u8;
-    (r,g,b)
+    (r, g, b)
 }
 
-pub fn cmyk_to_rgb_lut16(c:u8,m:u8,y:u8,k:u8,lut:&Mft2,wp:&WhitePoint) -> (u8,u8,u8) {
-    let (l,a,b) = cmyk_to_lab_lut16(c,m,y,k,lut);
-    let (x,y,z) = lab_to_xyz_wp(l,a,b,wp);
-    let (r,g,b) = xyz_to_rgb(x as f64,y as f64,z as f64);
-
-    (r,g,b)
+/// Compatibility wrapper for [`try_cmyk_to_rgb_lut16`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
+pub fn cmyk_to_rgb_lut16(c: u8, m: u8, y: u8, k: u8, lut: &Mft2, wp: &WhitePoint) -> (u8, u8, u8) {
+    try_cmyk_to_rgb_lut16(c, m, y, k, lut, wp).expect("Invalid legacy LUT conversion input")
 }
 
-pub fn cmyk_to_rgb_lut8(c:u8,m:u8,y:u8,k:u8,lut:&Mft1,wp:&WhitePoint) -> (u8,u8,u8) {
-    let (l,a,b) = cmyk_to_lab_lut8(c,m,y,k,lut);
-    let (x,y,z) = lab_to_xyz_wp(l,a,b,wp);
-    let (r,g,b) = xyz_to_rgb(x as f64,y as f64,z as f64);
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_cmyk_to_rgb_lut16(
+    c: u8,
+    m: u8,
+    y: u8,
+    k: u8,
+    lut: &Mft2,
+    wp: &WhitePoint,
+) -> Result<(u8, u8, u8)> {
+    super::lut_convert::check_whitepoint(wp)?;
+    let (l, a, b) = try_cmyk_to_lab_lut16(c, m, y, k, lut)?;
+    let (x, y, z) = lab_to_xyz_wp(l, a, b, wp);
+    let (r, g, b) = xyz_to_rgb(x, y, z);
 
-    (r,g,b)
+    Ok((r, g, b))
+}
+
+/// Compatibility wrapper for [`try_cmyk_to_rgb_lut8`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
+pub fn cmyk_to_rgb_lut8(c: u8, m: u8, y: u8, k: u8, lut: &Mft1, wp: &WhitePoint) -> (u8, u8, u8) {
+    try_cmyk_to_rgb_lut8(c, m, y, k, lut, wp).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_cmyk_to_rgb_lut8(
+    c: u8,
+    m: u8,
+    y: u8,
+    k: u8,
+    lut: &Mft1,
+    wp: &WhitePoint,
+) -> Result<(u8, u8, u8)> {
+    super::lut_convert::check_whitepoint(wp)?;
+    let (l, a, b) = try_cmyk_to_lab_lut8(c, m, y, k, lut)?;
+    let (x, y, z) = lab_to_xyz_wp(l, a, b, wp);
+    let (r, g, b) = xyz_to_rgb(x, y, z);
+
+    Ok((r, g, b))
 }
 
 

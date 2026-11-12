@@ -56,7 +56,8 @@ pub fn lab_f64_to_cmyk_lut16(l: f64, a: f64, b: f64, lut: &Mft2) -> (f64, f64, f
 
 /// Checked legacy conversion with unchanged encoded units and matrix semantics.
 ///
-/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or non-finite Lab.
+/// Finite out-of-range Lab retains the legacy saturating byte conversion and quantization.
 pub fn try_lab_f64_to_cmyk_lut16(
     l: f64,
     a: f64,
@@ -107,7 +108,8 @@ pub fn lab_f64_to_cmyk_lut8(l: f64, a: f64, b: f64, lut: &Mft1) -> (f64, f64, f6
 
 /// Checked legacy conversion with unchanged encoded units and matrix semantics.
 ///
-/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or non-finite Lab.
+/// Finite out-of-range Lab retains the legacy saturating byte conversion and quantization.
 pub fn try_lab_f64_to_cmyk_lut8(
     l: f64,
     a: f64,
@@ -147,7 +149,8 @@ pub fn lab_f64_to_cmyk_lut8_u8(l: f64, a: f64, b: f64, lut: &Mft1) -> (u8, u8, u
 
 /// Checked legacy conversion with unchanged encoded units and matrix semantics.
 ///
-/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or non-finite Lab.
+/// Finite out-of-range Lab retains the legacy saturating byte conversion and quantization.
 pub fn try_lab_f64_to_cmyk_lut8_u8(l: f64, a: f64, b: f64, lut: &Mft1) -> Result<(u8, u8, u8, u8)> {
     super::lut_convert::check_lab(l, a, b)?;
     let l = (l / 100.0 * 255.0 + 0.5) as u8;

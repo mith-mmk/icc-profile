@@ -101,9 +101,9 @@ pub(super) fn plan_route_with_policy(
         let kind = tag.and_then(|data| data.get(..4));
         let supported = (version == 2 && kind == Some(&b"mft2"[..]))
             || (version == 4 && kind == Some(&b"mAB "[..]));
-        if !a_to_b || intent != RenderingIntent::RelativeColorimetric || !supported {
+        if !a_to_b || intent == RenderingIntent::AbsoluteColorimetric || !supported {
             return Err(TransformError::UnsupportedProfileFeature(
-                "CMYK requires v2 mft2 or v4 mAB DeviceToPcs with relative intent",
+                "CMYK requires v2 mft2 or v4 mAB DeviceToPcs with perceptual, relative, or saturation intent",
             ));
         }
     }

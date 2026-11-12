@@ -1990,3 +1990,62 @@ fn algorithm_profile_reaches_mab_mba_standalone_and_matrix_destination() {
         }
     }
 }
+
+
+fn cmyk_intent_profile(version: u8, signatures: &[[u8; 4]], malformed: Option<[u8;4]>) -> Vec<u8> {
+    let original = if version == 2 {cmyk_mft2_profile()} else {cmyk_mab_profile()};
+    let base = original[144..].to_vec();
+    let mut tags = vec![(*b"wtpt", xyz(0.9642, 1.0, 0.8249))];
+    for signature in signatures {
+        let mut tag = base.clone();
+        let start = if version == 2 {68} else {52};
+        let corners = if version == 2 {16} else {48};
+        let code = (signature[3] - b'0' + 1) as u16 * 4096;
+        for v in tag[start..start+corners*3*2].chunks_exact_mut(2) {v.copy_from_slice(&code.to_be_bytes());}
+        if malformed == Some(*signature) {tag[..4].copy_from_slice(b"bad!");}
+        tags.push((*signature, tag));
+    }
+    let mut result=profile(*b"CMYK",tags);result[8]=version;result
+}
+
+#[test]
+fn cmyk_intents_select_distinct_tables_and_preserve_atomic_contracts() {
+    for version in [2,4] {
+        let source=Profile::parse(&cmyk_intent_profile(version,&[*b"A2B0",*b"A2B1",*b"A2B2"],None)).unwrap();
+        for (intent,signature,expected) in [(RenderingIntent::Perceptual,*b"A2B0",0.125),(RenderingIntent::RelativeColorimetric,*b"A2B1",0.25),(RenderingIntent::Saturation,*b"A2B2",0.375)] {
+            let stage=source.compile(TransformDirection::DeviceToPcs,intent,TransformLimits::default()).unwrap();
+            let mut output=[0.0;3];stage.transform_f32_atomic(&[0.2,0.4,0.6,0.8],&mut output).unwrap();
+            assert!(output.iter().all(|v|(v-expected).abs()<1e-6));
+            let destinations=[d50_matrix_rgb_profile(),profile(*b"RGB ",vec![(*b"B2A0",identity_mft2()),(*b"B2A1",identity_mft2()),(*b"B2A2",identity_mft2())])];
+            for bytes in destinations {
+                let destination=Profile::parse(&bytes).unwrap();
+                let transform=Transform::new(&source,&destination,TransformOptions{rendering_intent:intent,..Default::default()}).unwrap();
+                assert_eq!(transform.input_route_info().selected_tag(),Some(signature));
+                assert_eq!(transform.input_route_info().requested_intent(),intent);
+                assert!(!transform.input_route_info().used_fallback());
+                atomic_contract::check_atomic_contract(&transform);
+            }
+        }
+    }
+}
+
+#[test]
+fn cmyk_intent_fallback_is_visible_and_malformed_selected_tag_is_not_hidden() {
+    for version in [2,4] {
+        let destination=Profile::parse(&d50_matrix_rgb_profile()).unwrap();
+        for intent in [RenderingIntent::RelativeColorimetric,RenderingIntent::Saturation] {
+            let source=Profile::parse(&cmyk_intent_profile(version,&[*b"A2B0"],None)).unwrap();
+            let transform=Transform::new(&source,&destination,TransformOptions{rendering_intent:intent,..Default::default()}).unwrap();
+            assert_eq!(transform.input_route_info().selected_tag(),Some(*b"A2B0"));
+            assert!(transform.input_route_info().used_fallback());
+            let sig=if intent==RenderingIntent::Saturation {*b"A2B2"} else {*b"A2B1"};
+            let source=Profile::parse(&cmyk_intent_profile(version,&[*b"A2B0",sig],Some(sig))).unwrap();
+            assert!(Transform::new(&source,&destination,TransformOptions{rendering_intent:intent,..Default::default()}).is_err());
+        }
+        let source=Profile::parse(&cmyk_intent_profile(version,&[*b"A2B1"],None)).unwrap();
+        assert!(source.compile(TransformDirection::DeviceToPcs,RenderingIntent::Perceptual,TransformLimits::default()).is_err());
+        assert!(source.compile(TransformDirection::DeviceToPcs,RenderingIntent::AbsoluteColorimetric,TransformLimits::default()).is_err());
+        assert!(source.compile(TransformDirection::PcsToDevice,RenderingIntent::RelativeColorimetric,TransformLimits::default()).is_err());
+        assert!(Transform::new(&source,&destination,TransformOptions{black_point_compensation:true,..Default::default()}).is_err());
+    }
+}

@@ -1,0 +1,55 @@
+{
+  "source": "synthetic-v4-saturation.icc",
+  "source_sha256": "5569cbcfce1d729fd23a2c116b11c9dc54356d6763da9125f28657b6d4068e81",
+  "destination": "PSOcoated_v3.icc",
+  "destination_sha256": "c30ad2c01e8f93135ec7682c535e0a81bc2d177c301e196376c5f5838b5c8e86",
+  "lcms_version": 2190,
+  "lcms_binary_sha256": "9d97fbd455063b3d06d07d93ab84aab62c38746329574f75984b25b7b125a7c2",
+  "moxcms_version": "0.9.2",
+  "icc_3d_interpolation": "trilinear",
+  "mox_requested_3d_interpolation": "tetrahedral",
+  "lcms_interpolation": "engine-selected",
+  "intent": "saturation",
+  "lcms_flags": "NOOPTIMIZE|NOCACHE (0x0140)",
+  "pixels": 4913,
+  "input_channels": 3,
+  "output_channels": 4,
+  "tolerance_codes": 1024,
+  "note": "screening tolerance, not a DeltaE accuracy guarantee",
+  "status": "icc parse=ok\nicc compile=UnsupportedProfileFeature(\"CMYK output requires explicit printer B2A1 for colorimetric or v4 mBA B2A0/B2A2 for perceptual/saturation; absolute is composite-only\")\nmox parse=ok\nmox options=TransformOptions { rendering_intent: Saturation, allow_use_cicp_transfer: false, prefer_fixed_point: false, interpolation_method: Tetrahedral, barycentric_weight_scale: Low }\nmox transform=ok\npixels=4913\n",
+  "comparison": {
+    "mox": {
+      "max_per_channel_codes": [
+        1561,
+        1824,
+        1518,
+        821
+      ],
+      "worst_input_codes": [
+        8192,
+        32768,
+        32768
+      ],
+      "worst_actual_codes": [
+        5995,
+        3988,
+        2814,
+        58233
+      ],
+      "worst_reference_codes": [
+        6384,
+        2164,
+        1296,
+        58478
+      ],
+      "max_abs_codes": 1824,
+      "mean_abs_codes": 77.93318746183594,
+      "max_normalized": 0.027832455939574275,
+      "mean_normalized": 0.0011891842139595016,
+      "pixels_over_tolerance": 33,
+      "exact_match_pixels": 71,
+      "pixels_over_32_codes": 4342,
+      "pixels_over_256_codes": 1087
+    }
+  }
+}

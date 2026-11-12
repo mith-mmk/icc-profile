@@ -2772,11 +2772,6 @@ fn cmyk_perceptual_output_unproved_routes_fail_closed() {
     }
     rejects(&with_d50_header(d50_matrix_rgb_profile()),&destination);
     for class in [*b"mntr",*b"scnr",*b"spac"] {let mut bad=destination.clone();bad[12..16].copy_from_slice(&class);rejects(&source,&bad);}
-    // Even explicit saturation tables are outside this first-stage contract.
-    let sat_source=Profile::parse(&with_d50_header(profile(*b"RGB ",vec![(*b"A2B2",perceptual_source_tag(*b"XYZ "))]))).unwrap();
-    let sat_destination=Profile::parse(&with_d50_header(cmyk_output_profile(4,vec![(*b"B2A2",cmyk_output_tag(4))]))).unwrap();
-    assert!(Transform::new(&sat_source,&sat_destination,TransformOptions{rendering_intent:RenderingIntent::Saturation,..perceptual_options()}).is_err());
-    assert!(sat_destination.compile(TransformDirection::PcsToDevice,RenderingIntent::Saturation,TransformLimits::default()).is_err());
     let legacy=with_d50_header(cmyk_output_profile(2,vec![(*b"B2A0",cmyk_output_tag(2))]));
     rejects(&source,&legacy);
     assert!(Profile::parse(&legacy).unwrap().compile(TransformDirection::PcsToDevice,RenderingIntent::Perceptual,TransformLimits::default()).is_err());
@@ -2784,4 +2779,116 @@ fn cmyk_perceptual_output_unproved_routes_fail_closed() {
     assert!(Transform::new(&source,&destination,TransformOptions{black_point_compensation:true,..perceptual_options()}).is_err());
     assert!(Transform::new(&source,&destination,TransformOptions{rendering_intent:RenderingIntent::Saturation,..perceptual_options()}).is_err());
     assert!(destination.compile(TransformDirection::PcsToDevice,RenderingIntent::Saturation,TransformLimits::default()).is_err());
+}
+
+
+fn saturation_options() -> TransformOptions {
+    TransformOptions{rendering_intent:RenderingIntent::Saturation,clamp:false,..Default::default()}
+}
+fn saturation_fixture(source: bool, pcs: [u8;4], metadata: bool) -> Vec<u8> {
+    // Deliberately distinct 0/1/2 tables: selecting another intent cannot
+    // accidentally satisfy the analytic saturation oracle, including K.
+    let mut zero=cmyk_output_tag(4);zero[88..152].fill(0);
+    let mut half=cmyk_output_tag(4);
+    for at in (88..152).step_by(2) {
+        let code=u16::from_be_bytes([half[at],half[at+1]])/2;
+        half[at..at+2].copy_from_slice(&code.to_be_bytes());
+    }
+    let mut tags=if source {vec![(*b"A2B0",mab_lab_white()),(*b"A2B1",mab_b_only()),(*b"A2B2",perceptual_source_tag(pcs))]}
+        else {vec![(*b"B2A0",zero),(*b"B2A1",half),(*b"B2A2",cmyk_output_tag(4))]};
+    if metadata {
+        tags.push((*b"wtpt",xyz(0.75,0.875,0.625)));
+        let mut chad=vec![0;44];chad[..4].copy_from_slice(b"sf32");
+        for i in 0..3 {u32_at(&mut chad,8+16*i,98304);}
+        tags.push((*b"chad",chad));
+        // Optional rig2 is descriptive, not a second transform stage.
+        let mut rig=vec![0;12];rig[..4].copy_from_slice(b"sig ");rig[8..].copy_from_slice(b"prmg");
+        tags.push((*b"rig2",rig));
+    }
+    let mut bytes=profile_with_pcs(if source {*b"RGB "} else {*b"CMYK"},pcs,tags);
+    if !source {bytes[12..16].copy_from_slice(b"prtr");}
+    with_d50_header(bytes)
+}
+#[test]
+fn cmyk_saturation_output_cross_pcs_and_standalone_match_independent_oracle() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D};
+    for src in [*b"XYZ ",*b"Lab "] {for dst in [*b"XYZ ",*b"Lab "] {
+        for interpolation in [ClutInterpolation3D::Tetrahedral,ClutInterpolation3D::Trilinear] {
+            let algorithms=AlgorithmProfile::default().with_clut_3d(interpolation);
+            let mut baseline=None;
+            for metadata in [false,true] {
+                let source=Profile::parse(&saturation_fixture(true,src,metadata)).unwrap();
+                let destination=Profile::parse(&saturation_fixture(false,dst,metadata)).unwrap();
+                let transform=Transform::new(&source,&destination,saturation_options()).unwrap().with_algorithm_profile(algorithms);
+                assert_eq!(transform.input_route_info().selected_tag(),Some(*b"A2B2"));
+                assert_eq!(transform.output_route_info().selected_tag(),Some(*b"B2A2"));
+                assert!(!transform.input_route_info().used_fallback());assert!(!transform.output_route_info().used_fallback());
+                let stage=destination.compile(TransformDirection::PcsToDevice,RenderingIntent::Saturation,TransformLimits::default()).unwrap().with_algorithm_profile(algorithms);
+                assert_eq!((stage.input_channels(),stage.output_channels()),(3,4));
+                let mut results=Vec::new();
+                for input in [[0.0;3],[0.01,0.02,0.03],[0.8,0.2,0.4],[0.2,0.8,0.4],[1.0;3]] {
+                    let mut output=[0.0;4];transform.transform_f32_atomic(&input,&mut output).unwrap();
+                    let expected=perceptual_expected(src,dst,input.map(|v|v as f64),interpolation==ClutInterpolation3D::Trilinear);
+                    for i in 0..4 {assert!((output[i]-expected[i]).abs()<4e-6,"{src:?} -> {dst:?}: {output:?} != {expected:?}");}
+                    let mut standalone=[0.0;4];stage.transform_f32_atomic(&perceptual_xyz(src,input.map(|v|v as f64)).map(|v|v as f32),&mut standalone).unwrap();
+                    for i in 0..4 {assert!((standalone[i]-expected[i]).abs()<4e-6);}
+                    results.push(output);
+                }
+                if let Some(ref prior)=baseline {assert_eq!(&results,prior);} else {baseline=Some(results);}
+                let mut sentinel=[-0.0f32;4];assert!(stage.transform_f32_atomic(&[0.2,f32::NAN,0.3],&mut sentinel).is_err());
+                assert!(sentinel.iter().all(|v|v.to_bits()==(-0.0f32).to_bits()));
+                atomic_contract::check_atomic_contract(&transform);
+            }
+        }
+    }}
+}
+#[test]
+fn cmyk_saturation_output_chunk_workers_and_late_errors_are_atomic() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D};
+    for src in [*b"XYZ ",*b"Lab "] {for dst in [*b"XYZ ",*b"Lab "] {
+        let source=Profile::parse(&saturation_fixture(true,src,false)).unwrap();
+        let destination=Profile::parse(&saturation_fixture(false,dst,false)).unwrap();
+        for interpolation in [ClutInterpolation3D::Tetrahedral,ClutInterpolation3D::Trilinear] {
+            let transform=Transform::new(&source,&destination,saturation_options()).unwrap().with_algorithm_profile(AlgorithmProfile::default().with_clut_3d(interpolation));
+            for pixels in [0,1,47,48,49,95,96,97,129] {
+                let input:Vec<f32>=(0..pixels*3).map(|i|[0.2,0.4,0.7][i%3]).collect();
+                let mut output=vec![0.0;pixels*4];transform.worker().transform_f32_atomic(&input,&mut output).unwrap();
+                let expected=perceptual_expected(src,dst,[0.2,0.4,0.7],interpolation==ClutInterpolation3D::Trilinear);
+                for p in output.chunks_exact(4) {for i in 0..4 {assert!((p[i]-expected[i]).abs()<4e-6);}}
+                for denom in [255.0f32,65535.0] {
+                    let codes:Vec<_>=input.iter().map(|v|(v*denom).round() as u16).collect();let mut result=vec![0u16;pixels*4];
+                    if denom==255.0 {let mut r=vec![0;pixels*4];transform.worker().transform_u8_atomic(&codes.iter().map(|v|*v as u8).collect::<Vec<_>>(),&mut r).unwrap();for (a,b) in result.iter_mut().zip(r) {*a=b as u16;}}
+                    else {transform.worker().transform_u16_atomic(&codes,&mut result).unwrap();}
+                    if pixels>0 {let expected=perceptual_expected(src,dst,[codes[0],codes[1],codes[2]].map(|v|v as f64/denom as f64),interpolation==ClutInterpolation3D::Trilinear).map(|v|(v*denom).round() as i32);
+                        for p in result.chunks_exact(4) {for i in 0..4 {assert!((p[i] as i32-expected[i]).abs()<=1);}}}
+                }
+            }
+            for bad in [f32::NAN,f32::INFINITY,-0.1,1.1] {
+                let mut input=vec![0.5;129*3];*input.last_mut().unwrap()=bad;let mut output=vec![-0.0f32;129*4];
+                assert!(transform.worker().transform_f32_atomic(&input,&mut output).is_err());assert!(output.iter().all(|v|v.to_bits()==(-0.0f32).to_bits()));
+            }
+        }
+    }}
+}
+#[test]
+fn cmyk_saturation_output_unproved_routes_fail_closed() {
+    let source=saturation_fixture(true,*b"XYZ ",false);let destination=saturation_fixture(false,*b"XYZ ",false);
+    let rejects=|s:&[u8],d:&[u8]|assert!(Transform::new(&Profile::parse(s).unwrap(),&Profile::parse(d).unwrap(),saturation_options()).is_err());
+    for source_side in [false,true] {
+        for version in [2,3,5] {let mut bad=if source_side {source.clone()} else {destination.clone()};bad[8]=version;if source_side {rejects(&bad,&destination);} else {rejects(&source,&bad);}}
+        for (at,value) in [(68,63189),(72,65535),(76,54062)] {let mut bad=if source_side {source.clone()} else {destination.clone()};u32_at(&mut bad,at,value);if source_side {rejects(&bad,&destination);} else {rejects(&source,&bad);}}
+        for payload in [None,Some(b"bad!".to_vec())] {
+            let mut tags=vec![(if source_side {*b"A2B0"} else {*b"B2A0"},if source_side {perceptual_source_tag(*b"XYZ ")} else {cmyk_output_tag(4)})];
+            if let Some(p)=payload {tags.push((if source_side {*b"A2B2"} else {*b"B2A2"},p));}
+            let mut bad=profile(if source_side {*b"RGB "} else {*b"CMYK"},tags);if !source_side {bad[12..16].copy_from_slice(b"prtr");}bad=with_d50_header(bad);
+            if source_side {rejects(&bad,&destination);} else {rejects(&source,&bad);assert!(Profile::parse(&bad).unwrap().compile(TransformDirection::PcsToDevice,RenderingIntent::Saturation,TransformLimits::default()).is_err());}
+        }
+    }
+    rejects(&with_d50_header(d50_matrix_rgb_profile()),&destination);
+    for class in [*b"mntr",*b"scnr",*b"spac"] {let mut bad=destination.clone();bad[12..16].copy_from_slice(&class);rejects(&source,&bad);}
+    let legacy=with_d50_header(cmyk_output_profile(2,vec![(*b"B2A2",cmyk_output_tag(2))]));
+    rejects(&source,&legacy);
+    assert!(Profile::parse(&legacy).unwrap().compile(TransformDirection::PcsToDevice,RenderingIntent::Saturation,TransformLimits::default()).is_err());
+    let source=Profile::parse(&source).unwrap();let destination=Profile::parse(&destination).unwrap();
+    assert!(Transform::new(&source,&destination,TransformOptions{black_point_compensation:true,..saturation_options()}).is_err());
 }

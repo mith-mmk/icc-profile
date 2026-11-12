@@ -125,12 +125,16 @@ pub(super) fn plan_route_with_policy(
                 && kind == Some(&b"mBA "[..])
                 && selection.signature == Some(*b"B2A0")
                 && intent == RenderingIntent::Perceptual;
-            if !(colorimetric || perceptual)
+            let saturation = version == 4
+                && kind == Some(&b"mBA "[..])
+                && selection.signature == Some(*b"B2A2")
+                && intent == RenderingIntent::Saturation;
+            if !(colorimetric || perceptual || saturation)
                 || profile.raw_device_class() != *b"prtr"
                 || selection.used_fallback
             {
                 return Err(TransformError::UnsupportedProfileFeature(
-                    "CMYK output requires explicit printer B2A1 for colorimetric or v4 mBA B2A0 for perceptual; absolute is composite-only",
+                    "CMYK output requires explicit printer B2A1 for colorimetric or v4 mBA B2A0/B2A2 for perceptual/saturation; absolute is composite-only",
                 ));
             }
         }

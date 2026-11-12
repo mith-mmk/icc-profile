@@ -144,8 +144,11 @@ impl CompiledProfile {
     /// Evaluate the compiled stage at its explicit physical D50 XYZ boundary.
     /// For a v4 CMYK perceptual PcsToDevice stage, XYZ is expressed in the
     /// perceptual PCS reference medium (ICC v4 6.3.3), not relative media XYZ.
-    /// The caller supplies that boundary; this stage does not insert an extra gamut map or
-    /// apply an additional reference-black adjustment.
+    /// For v4 CMYK saturation, XYZ represents the vendor-authored saturation
+    /// PCS (ICC v4 6.2.5 / 9.2.48); no perceptual reference-medium equivalence
+    /// is implied. The caller supplies the intent-specific boundary. This
+    /// stage evaluates the authored table without inserting an extra gamut
+    /// map or reference-black adjustment.
     /// Device samples are normalized and must be in `[0, 1]`; no implicit
     /// clipping or HDR-unit reinterpretation occurs here.
     /// Evaluation errors may partially update output; use `transform_f32_atomic`
@@ -383,22 +386,31 @@ impl Transform {
             OwnerPolicy::TransformStage,
         )?;
         if output.color_space() == super::profile::ColorSpace::Cmyk
-            && options.rendering_intent == RenderingIntent::Perceptual
+            && matches!(
+                options.rendering_intent,
+                RenderingIntent::Perceptual | RenderingIntent::Saturation
+            )
         {
-            // ICC v4 6.3.3 provides the common perceptual reference medium.
-            // Connect only explicit v4 perceptual LUTs; matrix and v2 sources
-            // do not establish that boundary. Do not add a second gamut or
-            // black-point mapping to the profile-authored A2B0/B2A0 tables.
+            // ICC v4 6.3.3 defines the perceptual reference medium. Saturation
+            // (6.2.5 / 9.2.48) connects vendor-authored A2B2/B2A2 tables without
+            // claiming a perceptual reference-medium or quality equivalence.
+            // Only explicit same-intent v4 LUTs establish this bounded route;
+            // do not insert an extra gamut, black-point or chad adjustment.
+            let source_tag = if options.rendering_intent == RenderingIntent::Perceptual {
+                *b"A2B0"
+            } else {
+                *b"A2B2"
+            };
             const HEADER_D50: [u8; 12] = [0, 0, 0xf6, 0xd6, 0, 1, 0, 0, 0, 0, 0xd3, 0x2d];
             if input.raw_version()[0] != 4
                 || !input_route.is_lut()
-                || input_route.route_info().selected_tag() != Some(*b"A2B0")
+                || input_route.route_info().selected_tag() != Some(source_tag)
                 || input_route.route_info().used_fallback()
                 || input.bytes().get(68..80) != Some(HEADER_D50.as_slice())
                 || output.bytes().get(68..80) != Some(HEADER_D50.as_slice())
             {
                 return Err(TransformError::UnsupportedProfileFeature(
-                    "CMYK perceptual output requires explicit v4 RGB A2B0 and v4 printer B2A0 with D50 PCS headers",
+                    "CMYK perceptual/saturation output requires explicit matching v4 RGB and printer LUTs with D50 PCS headers",
                 ));
             }
         }

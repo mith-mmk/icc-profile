@@ -152,11 +152,11 @@ for memory, compatibility and error guarantees.
 
 ## Initial CMYK display route
 
-The checked transform API now accepts v2 CMYK `mft2` A2B stages for relative
+The checked transform API now accepts v2 CMYK `mft2` and v4 CMYK `mAB` A2B stages for relative
 colorimetric display conversion to RGB (or a standalone DeviceToPcs stage).
 Samples are C/M/Y/K, 0 = no ink and 1 = maximum ink; u8/u16 scale to that range.
 Format-specific inversion and YCCK belong to callers. PCS remains D50 XYZ/Lab.
-CMYK output, other intents, v4 CMYK and other tag types remain unsupported.
+CMYK output, other intents and other CMYK tag types remain unsupported.
 
 The 4D CLUT uses all 16 hypercube corners with multilinear interpolation.
 Existing 1D/3D interpolation is unchanged. CMYK mft2 matrices must be identity.

@@ -97,13 +97,13 @@ pub(super) fn plan_route_with_policy(
         ));
     }
     if profile.color_space() == super::profile::ColorSpace::Cmyk {
-        if !a_to_b
-            || profile.raw_version()[0] != 2
-            || intent != RenderingIntent::RelativeColorimetric
-            || tag.map(|data| data.get(..4)) != Some(Some(&b"mft2"[..]))
-        {
+        let version = profile.raw_version()[0];
+        let kind = tag.and_then(|data| data.get(..4));
+        let supported = (version == 2 && kind == Some(&b"mft2"[..]))
+            || (version == 4 && kind == Some(&b"mAB "[..]));
+        if !a_to_b || intent != RenderingIntent::RelativeColorimetric || !supported {
             return Err(TransformError::UnsupportedProfileFeature(
-                "CMYK currently requires v2 mft2 DeviceToPcs with relative intent",
+                "CMYK requires v2 mft2 or v4 mAB DeviceToPcs with relative intent",
             ));
         }
     }

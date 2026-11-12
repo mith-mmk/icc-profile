@@ -1865,3 +1865,47 @@ fn cmyk_v2_saturated_clut_does_not_fail_strict_domain_from_roundoff() {
         assert!(output.iter().all(|v| (*v-65535.0/32768.0).abs()<2e-6));
     }
 }
+
+fn cmyk_mab_profile() -> Vec<u8> {
+    let grid=[2usize,3,2,4];
+    let mut tag=vec![0u8;52];tag[..4].copy_from_slice(b"mAB ");tag[8]=4;tag[9]=3;
+    u32_at(&mut tag,24,32);
+    for axis in 0..4 {tag[32+axis]=grid[axis] as u8;}
+    tag[48]=2;
+    for c in 0..grid[0] {for m in 0..grid[1] {for y in 0..grid[2] {for k in 0..grid[3] {
+        let [c,m,y,k]=[c as f32,m as f32/2.0,y as f32,k as f32/3.0];
+        for v in [c*m,y*k,c*k] {tag.extend_from_slice(&((v*16384.0).round() as u16).to_be_bytes());}
+    }}}}
+    let b=tag.len();u32_at(&mut tag,12,b as u32);
+    for _ in 0..3 {tag.extend_from_slice(b"curv\0\0\0\0\0\0\0\0");}
+    let a=tag.len();u32_at(&mut tag,28,a as u32);
+    for _ in 0..4 {tag.extend_from_slice(b"curv\0\0\0\0\0\0\0\0");}
+    profile(*b"CMYK",vec![(*b"A2B1",tag)])
+}
+
+#[test]
+fn cmyk_v4_mab_nonuniform_grid_and_four_curves() {
+    let p=Profile::parse(&cmyk_mab_profile()).unwrap();
+    let stage=p.compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()).unwrap();
+    for c in [0.0,0.3,1.0] {for m in [0.0,0.6,1.0] {for y in [0.0,0.2,1.0] {for k in [0.0,0.8,1.0] {
+        let mut output=[0.0;3];stage.transform_f32_atomic(&[c,m,y,k],&mut output).unwrap();
+        for (v,expected) in output.iter().zip([0.5*c*m,0.5*y*k,0.5*c*k]) {assert!((v-expected).abs()<2e-5);}
+    }}}}
+    let destination=Profile::parse(&d50_matrix_rgb_profile()).unwrap();
+    atomic_contract::check_atomic_contract(&Transform::new(&p,&destination,TransformOptions::default()).unwrap());
+}
+
+#[test]
+fn cmyk_v4_mab_limits_missing_fourth_curve_and_reverse_rejection() {
+    let bytes=cmyk_mab_profile();let p=Profile::parse(&bytes).unwrap();
+    for count in [143,144] {
+        let result=p.compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,
+            TransformLimits::builder().max_clut_entries(count).build().unwrap());
+        if count==143 {assert!(matches!(result,Err(TransformError::ResourceLimit(_))));} else {result.unwrap();}
+    }
+    let mut bad=bytes.clone();let length=bad.len();bad[length-12..length-8].copy_from_slice(b"bad!");
+    assert!(Profile::parse(&bad).unwrap().compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()).is_err());
+    assert!(matches!(p.compile(TransformDirection::PcsToDevice,RenderingIntent::RelativeColorimetric,TransformLimits::default()),Err(TransformError::UnsupportedProfileFeature(_))));
+    let mut bad=bytes;u32_at(&mut bad,144+28,0);
+    assert!(Profile::parse(&bad).unwrap().compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()).is_err());
+}

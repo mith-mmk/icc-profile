@@ -143,7 +143,21 @@ impl ColorMatrix3D {
         }
     }
 
+    /// Compatibility spelling of [`Self::inverse`].
     pub fn invese(matrix:&Self) -> Option<Self> {
+        Self::inverse(matrix)
+    }
+
+    /// Invert a finite matrix using the legacy cofactor calculation.
+    ///
+    /// Returns `None` for nonfinite input, a zero or nonfinite determinant, or
+    /// a nonfinite result. This is not a condition-number check: no absolute
+    /// determinant tolerance is imposed, and very small finite determinants
+    /// remain valid when the calculation produces finite inverse entries.
+    pub fn inverse(matrix:&Self) -> Option<Self> {
+        if !matrix.e.iter().all(|value| value.is_finite()) {
+            return None;
+        }
         let a11 = matrix.e[0];
         let a12 = matrix.e[1];
         let a13 = matrix.e[2];
@@ -156,10 +170,10 @@ impl ColorMatrix3D {
         
         let delta =  a11 * a22 * a33 + a12 *a23 * a31 + a13 * a21 * a32
             - a13 * a22 * a31 - a11 * a23 * a32 - a12 * a21 *a33;
-        if delta == 0.0 {
+        if delta == 0.0 || !delta.is_finite() {
             None
         } else {
-            Some(Self{
+            let inverse = Self{
                 e:[
                 (a22 * a33 - a23 * a32) /delta,
                 (a13 * a32 - a12 * a33) /delta,
@@ -173,7 +187,12 @@ impl ColorMatrix3D {
                 (a12 * a31 - a11 * a32) /delta,
                 (a11 * a22 - a12 * a21) /delta
                 ]
-            })
+            };
+            if inverse.e.iter().all(|value| value.is_finite()) {
+                Some(inverse)
+            } else {
+                None
+            }
         }
     }
 

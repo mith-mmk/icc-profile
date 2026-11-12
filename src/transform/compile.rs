@@ -122,7 +122,7 @@ impl CompiledProfile {
             scratch
                 .get_mut(..output.len())
                 .ok_or(TransformError::UnsupportedProfileFeature(
-                    "atomic execution supports at most three channels",
+                    "atomic execution supports at most four input and three output channels",
                 ))?;
         self.transform_f32(input, temporary)?;
         output.copy_from_slice(temporary);
@@ -320,6 +320,13 @@ impl Transform {
         options: TransformOptions,
         limits: TransformLimits,
     ) -> Result<Self, TransformError> {
+        if input.color_space() == super::profile::ColorSpace::Cmyk
+            && output.color_space() != super::profile::ColorSpace::Rgb
+        {
+            return Err(TransformError::UnsupportedProfileFeature(
+                "CMYK display transforms require RGB output",
+            ));
+        }
         if options.black_point_compensation {
             return Err(TransformError::UnsupportedProfileFeature(
                 "black point compensation requires a profile black-point stage",
@@ -466,7 +473,7 @@ impl Transform {
             if src.iter().any(|x| !x.is_finite()) {
                 return Err(TransformError::NonFiniteInput);
             }
-            let mut normalized = [0.0; 3];
+            let mut normalized = [0.0; 4];
             normalized[..src.len()].copy_from_slice(src);
             if !self.options.clamp
                 && normalized[..src.len()]
@@ -599,9 +606,9 @@ impl Transform {
         const MAX_CHANNELS: usize = 3;
         let input_channels = self.input_channels();
         let output_channels = self.output_channels();
-        if input_channels > MAX_CHANNELS || output_channels > MAX_CHANNELS {
+        if input_channels > 4 || output_channels > MAX_CHANNELS {
             return Err(TransformError::UnsupportedProfileFeature(
-                "atomic execution supports at most three channels",
+                "atomic execution supports at most four input and three output channels",
             ));
         }
         let mut scratch = [0.0; PIXELS * MAX_CHANNELS];
@@ -777,7 +784,8 @@ pub(super) fn device_channels(space: super::profile::ColorSpace) -> usize {
     match space {
         super::profile::ColorSpace::Gray => 1,
         super::profile::ColorSpace::Rgb => 3,
-        super::profile::ColorSpace::Cmyk | super::profile::ColorSpace::NColor(_) => 0,
+        super::profile::ColorSpace::Cmyk => 4,
+        super::profile::ColorSpace::NColor(_) => 0,
     }
 }
 

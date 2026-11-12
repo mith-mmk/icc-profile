@@ -104,12 +104,13 @@ where
     transform.validate_buffer_lengths(input.len(), output.len())?;
     let input_channels = transform.input_channels();
     let output_channels = transform.output_channels();
-    if input_channels > MAX_CHANNELS || output_channels > MAX_CHANNELS {
+    if input_channels > 4 || output_channels > MAX_CHANNELS {
         return Err(TransformError::UnsupportedProfileFeature(
-            "worker supports at most three channels",
+            "worker supports at most four input and three output channels",
         ));
     }
     let pixels = input.len() / input_channels;
+    let chunk_pixels = (CHUNK_PIXELS * MAX_CHANNELS / input_channels).min(CHUNK_PIXELS);
     let mut input_chunk = [0.0f32; CHUNK_PIXELS * MAX_CHANNELS];
     let mut output_chunk = [0.0f32; CHUNK_PIXELS * MAX_CHANNELS];
 
@@ -118,8 +119,8 @@ where
     // The first pass validates every chunk. The second pass publishes the
     // already-validated results, preserving the caller output on any error.
     for publish in [false, true] {
-        for pixel_start in (0..pixels).step_by(CHUNK_PIXELS) {
-            let count = (pixels - pixel_start).min(CHUNK_PIXELS);
+        for pixel_start in (0..pixels).step_by(chunk_pixels) {
+            let count = (pixels - pixel_start).min(chunk_pixels);
             let input_count = count * input_channels;
             let output_count = count * output_channels;
             let input_offset = pixel_start * input_channels;

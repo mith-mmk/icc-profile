@@ -96,6 +96,17 @@ pub(super) fn plan_route_with_policy(
             "only Gray/RGB transforms are supported",
         ));
     }
+    if profile.color_space() == super::profile::ColorSpace::Cmyk {
+        if !a_to_b
+            || profile.raw_version()[0] != 2
+            || intent != RenderingIntent::RelativeColorimetric
+            || tag.map(|data| data.get(..4)) != Some(Some(&b"mft2"[..]))
+        {
+            return Err(TransformError::UnsupportedProfileFeature(
+                "CMYK currently requires v2 mft2 DeviceToPcs with relative intent",
+            ));
+        }
+    }
     let expected_channels = if a_to_b { (channels, 3) } else { (3, channels) };
     let model = if tag.is_some() {
         RouteModel::Lut

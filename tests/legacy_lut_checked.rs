@@ -548,3 +548,77 @@ fn oversized_grid_and_declared_tables_return_errors() {
     b.output_table_enteries = u16::MAX;
     invalid(|| try_d4_to_d3_lut16(255, 255, 255, 255, &b));
 }
+
+#[test]
+fn finite_out_of_range_lab_preserves_saturating_conversion() {
+    let mut a = fixture8(3, 4);
+    let mut b = fixture16(3, 4, 2);
+    // Distinct corners expose each encoded coordinate instead of a constant LUT.
+    for x in 0..2 {
+        for y in 0..2 {
+            for z in 0..2 {
+                let offset = ((x * 2 + y) * 2 + z) * 4;
+                a.clut_values[offset..offset + 4].copy_from_slice(&[
+                    x as u8 * 255,
+                    y as u8 * 255,
+                    z as u8 * 255,
+                    255,
+                ]);
+                b.clut_values[offset..offset + 4].copy_from_slice(&[
+                    x as u16 * 65535,
+                    y as u16 * 65535,
+                    z as u16 * 65535,
+                    65535,
+                ]);
+            }
+        }
+    }
+    for lab in [
+        [-1.0, -200.0, 200.0],
+        [101.0, 200.0, -200.0],
+        [f64::MAX, f64::MAX, -f64::MAX],
+        [-f64::MAX, 0.0, 0.0],
+    ] {
+        let l8 = (lab[0] / 100.0 * 255.0 + 0.5) as u8;
+        let l16 = (lab[0] / 100.0 * 255.0) as u8;
+        let a_byte = (lab[1] + 127.5) as u8;
+        let b_byte = (lab[2] + 127.5) as u8;
+        let expected8 = lab_to_cmyk_lut8(l8, a_byte, b_byte, &a);
+        let expected8_u8 = lab_to_cmyk_lut8_u8(l8, a_byte, b_byte, &a);
+        let expected16 = lab_to_cmyk_lut16(l16, a_byte, b_byte, &b);
+        assert_eq!(
+            try_lab_f64_to_cmyk_lut8(lab[0], lab[1], lab[2], &a).unwrap(),
+            expected8
+        );
+        assert_eq!(
+            try_lab_f64_to_cmyk_lut8_u8(lab[0], lab[1], lab[2], &a).unwrap(),
+            expected8_u8
+        );
+        assert_eq!(
+            try_lab_f64_to_cmyk_lut16(lab[0], lab[1], lab[2], &b).unwrap(),
+            expected16
+        );
+        assert_eq!(lab_f64_to_cmyk_lut8(lab[0], lab[1], lab[2], &a), expected8);
+        assert_eq!(
+            lab_f64_to_cmyk_lut8_u8(lab[0], lab[1], lab[2], &a),
+            expected8_u8
+        );
+        assert_eq!(
+            lab_f64_to_cmyk_lut16(lab[0], lab[1], lab[2], &b),
+            expected16
+        );
+        assert_eq!(
+            lab_f64_to_cmyk_entries_lut8(&lab, 1, &a).unwrap(),
+            vec![expected8.0, expected8.1, expected8.2, expected8.3]
+        );
+        assert_eq!(
+            lab_f64_to_cmyk_entries_lut8_u8(&lab, 1, &a).unwrap(),
+            vec![
+                expected8_u8.0,
+                expected8_u8.1,
+                expected8_u8.2,
+                expected8_u8.3
+            ]
+        );
+    }
+}

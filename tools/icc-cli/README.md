@@ -86,4 +86,3 @@ missing/unsupported/malformed profiles, oversized files and argument/sample limi
 No external CMS implementation source was used.
 
 On Unix, the FIFO regression test requires the standard mkfifo command.
-

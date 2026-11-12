@@ -109,3 +109,16 @@ Heidelberg PSOcoated_v3 -> sRGB2014, same fixed comparison conditions above:
 LittleCMS 2.19; >32: 1030 points, >256: 0, >1024: 0. This establishes initial
 coverage, not DeltaE acceptance or printing/separation support. The JSON is
 `cms-comparison-results/heidelberg-cmyk-v2.json`.
+
+## CMYK v4 mAB input extension
+
+The display route also admits v4 mAB A2B with four input A curves and a 4D CLUT.
+The three-component PCS/B/M/matrix side remains unchanged. Nonuniform grid sizes
+are covered by a synthetic [2,3,2,4] fixture, including fourth-curve validation,
+missing-stage rejection and exact/one-under CLUT limits. Reverse CMYK mBA and
+other intents remain unsupported. RGB/Gray routes are unchanged.
+
+X-Rite CRPC6 -> sRGB2014 under the same fixed conditions: 6561 points succeeded;
+maximum RGB16 difference 74, mean 5.5480 codes vs LittleCMS 2.19; >32:343 points,
+>256:0, >1024:0. The raw record is `cms-comparison-results/xrite-cmyk-v4.json`.
+These display comparisons are not a print-separation or DeltaE release claim.

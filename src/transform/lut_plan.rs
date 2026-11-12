@@ -55,7 +55,7 @@ pub(super) struct EncodedRange {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct CurveSetShape<'a> {
-    pub(super) plans: [CurvePlan<'a>; 3],
+    pub(super) plans: [CurvePlan<'a>; 4],
     pub(super) count: usize,
 }
 
@@ -570,16 +570,16 @@ pub(super) fn plan_curve_set_shape<'a>(
 ) -> Result<CurveSetShape<'a>, TransformError> {
     if offset == 0 {
         return Ok(CurveSetShape {
-            plans: [CurvePlan::default(); 3],
+            plans: [CurvePlan::default(); 4],
             count: 0,
         });
     }
-    if count > 3 {
+    if count > 4 {
         return Err(TransformError::UnsupportedProfileFeature(
-            "only Gray/RGB LUTs are supported",
+            "curve sets support at most four channels",
         ));
     }
-    let mut plans = [CurvePlan::default(); 3];
+    let mut plans = [CurvePlan::default(); 4];
     let mut at = offset;
     for plan in plans.iter_mut().take(count) {
         let curve_data = data

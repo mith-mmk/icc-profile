@@ -80,7 +80,7 @@ impl LutTransform {
             MFT1 | MFT2 | MAB | MBA => {
                 let input = usize::from(data[8]);
                 let output = usize::from(data[9]);
-                if !(input == 4 && output == 3 && be_u32(data, 0)? == MFT2) {
+                if !(input == 4 && output == 3 && matches!(be_u32(data, 0)?, MFT2 | MAB)) {
                     validate_channels(input)?;
                     validate_channels(output)?;
                 }
@@ -227,12 +227,12 @@ impl LutTransform {
                 b,
                 reverse,
             } => {
-                let mut values = [0.0; 3];
+                let mut values = [0.0; 4];
                 values[..input.len()].copy_from_slice(input);
                 if !*reverse {
                     apply_curves(a, &mut values[..input.len()], clamp)?;
                     if let Some(clut) = clut {
-                        let mut next = [0.0; 3];
+                        let mut next = [0.0; 4];
                         clut.eval(&values[..input.len()], &mut next[..clut.channels], clamp)?;
                         values = next;
                     }
@@ -250,7 +250,7 @@ impl LutTransform {
                     clip_values(&mut values[..m.len().min(3)], clamp)?;
                     apply_curves(m, &mut values[..m.len()], clamp)?;
                     if let Some(clut) = clut {
-                        let mut next = [0.0; 3];
+                        let mut next = [0.0; 4];
                         let clut_input = m.len().max(input.len());
                         clut.eval(&values[..clut_input], &mut next[..clut.channels], clamp)?;
                         values = next;

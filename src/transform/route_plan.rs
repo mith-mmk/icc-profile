@@ -115,18 +115,22 @@ pub(super) fn plan_route_with_policy(
                 ));
             }
         } else {
-            let supported = (version == 2 && kind == Some(&b"mft2"[..]))
-                || (version == 4 && kind == Some(&b"mBA "[..]));
-            if !supported
-                || !(intent == RenderingIntent::RelativeColorimetric
+            let colorimetric = ((version == 2 && kind == Some(&b"mft2"[..]))
+                || (version == 4 && kind == Some(&b"mBA "[..])))
+                && selection.signature == Some(*b"B2A1")
+                && (intent == RenderingIntent::RelativeColorimetric
                     || (intent == RenderingIntent::AbsoluteColorimetric
-                        && owner_policy == OwnerPolicy::TransformStage))
+                        && owner_policy == OwnerPolicy::TransformStage));
+            let perceptual = version == 4
+                && kind == Some(&b"mBA "[..])
+                && selection.signature == Some(*b"B2A0")
+                && intent == RenderingIntent::Perceptual;
+            if !(colorimetric || perceptual)
                 || profile.raw_device_class() != *b"prtr"
-                || selection.signature != Some(*b"B2A1")
                 || selection.used_fallback
             {
                 return Err(TransformError::UnsupportedProfileFeature(
-                    "CMYK output requires explicit printer B2A1 using v2 mft2 or v4 mBA; absolute is composite-only",
+                    "CMYK output requires explicit printer B2A1 for colorimetric or v4 mBA B2A0 for perceptual; absolute is composite-only",
                 ));
             }
         }

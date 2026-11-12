@@ -276,3 +276,82 @@ fn input_curve_and_matrix_clipping_are_applied_before_clut() {
     a.clut_values[4..].fill(255);
     assert_eq!(d3_to_d1_lut8(255, 0, 0, &a), 255);
 }
+#[test]
+fn four_point_grid_checks_both_sides_of_interior_cell_boundaries() {
+    let mut lut = fixture16(3, 4, 2);
+    lut.number_of_clut_grid_points = 4;
+    lut.clut_values.clear();
+    // First output has slopes 9000, 30000, 21000 across its three cells.
+    // Other outputs isolate Y/Z strides and a mixed X*Y field.
+    for x in 0..4 {
+        for y in 0..4 {
+            for z in 0..4 {
+                lut.clut_values.extend_from_slice(&[
+                    [0, 9000, 39000, 60000][x],
+                    y as u16 * 21845,
+                    z as u16 * 21845,
+                    (x * y * 7000) as u16,
+                ]);
+            }
+        }
+    }
+    for x in [0, 84, 85, 86, 169, 170, 171, 255] {
+        let expected = if x <= 85 {
+            x as f64 * 9000.0 / 85.0
+        } else if x <= 170 {
+            9000.0 + (x - 85) as f64 * 30000.0 / 85.0
+        } else {
+            39000.0 + (x - 170) as f64 * 21000.0 / 85.0
+        };
+        for y in [84, 85, 86, 169, 170, 171] {
+            let z = 255 - y;
+            let actual = d3_to_d4_lut16(x, y, z, &lut);
+            close(actual.0, expected);
+            close(actual.1, y as f64 * 257.0);
+            close(actual.2, z as f64 * 257.0);
+            close(actual.3, 7000.0 * x as f64 * y as f64 / (85.0 * 85.0));
+        }
+    }
+}
+
+#[test]
+fn lut8_interpolates_nonlinear_output_curve_before_rounding() {
+    let mut lut = fixture8(3, 1);
+    // At x=128 the CLUT field is 128/255, between output knots 0 and 1.
+    lut.clut_values[4..].fill(1);
+    lut.output_table.fill(0);
+    lut.output_table[1] = 200;
+    lut.output_table[2] = 10;
+    // 200*128/255 = 100.392..., rounds to 100. Truncating the CLUT first yields 0.
+    assert_eq!(d3_to_d1_lut8(128, 73, 201, &lut), 100);
+    assert_eq!(d3_to_d1_lut8(0, 73, 201, &lut), 0);
+    assert_eq!(d3_to_d1_lut8(255, 73, 201, &lut), 200);
+}
+
+#[test]
+fn fractional_off_diagonal_matrix_preserves_axis_mixing() {
+    let mut lut = fixture16(3, 3, 2);
+    // S15Fixed16Number::new currently encodes .5 as 32767/65535 and
+    // .25 as 16383/65535. Use those literal rational values, independently
+    // of the implementation's matrix accessor, to keep this legacy test exact.
+    lut.e_params = [0.5, 0.25, 0.0, 0.0, 0.5, 0.25, 0.25, 0.0, 0.5]
+        .into_iter()
+        .map(S15Fixed16Number::new)
+        .collect();
+    for x in 0..2 {
+        for y in 0..2 {
+            for z in 0..2 {
+                let p = ((x * 2 + y) * 2 + z) * 3;
+                lut.clut_values[p..p + 3].copy_from_slice(&[
+                    x as u16 * 65535,
+                    y as u16 * 65535,
+                    z as u16 * 65535,
+                ]);
+            }
+        }
+    }
+    let actual = d3_to_d3_lut16(40, 120, 200, &lut);
+    close(actual.0, (32767.0 * 40.0 + 16383.0 * 120.0) / 255.0);
+    close(actual.1, (32767.0 * 120.0 + 16383.0 * 200.0) / 255.0);
+    close(actual.2, (16383.0 * 40.0 + 32767.0 * 200.0) / 255.0);
+}

@@ -268,7 +268,8 @@ fn whitepoint_d65_x_approx() {
 #[test]
 fn whitepoint_d50_x_approx() {
     let wp = WhitePoint::d50();
-    assert_approx("D50 X", wp.x, 0.9568, 0.005);
+    // CIE 1931 2-degree D50; 0.9568 is D55, not D50.
+    assert_approx("D50 X", wp.x, 0.9642, 0.005);
 }
 
 // ===========================================================================

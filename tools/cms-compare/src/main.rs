@@ -1,6 +1,9 @@
 use std::{env, fs};
 fn main() {
     let args: Vec<_> = env::args().collect();
+    let intent: u32 = args.get(4).map(|s| s.parse().expect("intent must be 0..3")).unwrap_or(1);
+    assert!(intent <= 3, "intent must be 0..3");
+    let icc_intent = [icc_profile::RenderingIntent::Perceptual, icc_profile::RenderingIntent::RelativeColorimetric, icc_profile::RenderingIntent::Saturation, icc_profile::RenderingIntent::AbsoluteColorimetric][intent as usize];
     let source = fs::read(&args[1]).unwrap();
     let destination = fs::read(&args[2]).unwrap();
     let channels = if &source[16..20] == b"CMYK" { 4 } else { 3 };
@@ -22,7 +25,7 @@ fn main() {
     ) {
         (Ok(s), Ok(d)) => {
             println!("icc parse=ok");
-            match icc_profile::Transform::new(&s, &d, icc_profile::TransformOptions::default()) {
+            match icc_profile::Transform::new(&s, &d, icc_profile::TransformOptions {rendering_intent:icc_intent, ..Default::default()}) {
                 Ok(t) => match t.transform_u16_atomic(&input, &mut output) {
                     Ok(()) => {
                         save(&args[3], "icc", &output);
@@ -42,7 +45,7 @@ fn main() {
         (Ok(s), Ok(d)) => {
             println!("mox parse=ok");
             let mut options = moxcms::TransformOptions::default();
-            options.rendering_intent = moxcms::RenderingIntent::RelativeColorimetric;
+            options.rendering_intent = [moxcms::RenderingIntent::Perceptual, moxcms::RenderingIntent::RelativeColorimetric, moxcms::RenderingIntent::Saturation, moxcms::RenderingIntent::AbsoluteColorimetric][intent as usize];
             options.allow_use_cicp_transfer = false;
             options.prefer_fixed_point = false;
             options.interpolation_method = moxcms::InterpolationMethod::Tetrahedral;

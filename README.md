@@ -119,7 +119,7 @@ Trusted sources for ICC profiles:
 
 ## Release boundary
 
-The 0.1.0 development branch adds relative-colorimetric CMYK to RGB display through v2 mft2 and v4 mAB source profiles. Published 0.0.8 remains unchanged. Unsupported color
+The 0.1.0 development branch adds perceptual, relative-colorimetric, and saturation CMYK to RGB display through v2 mft2 and v4 mAB source profiles. Published 0.0.8 remains unchanged. Unsupported color
 spaces and processing elements fail closed rather than being approximated.
 ## License
 
@@ -153,11 +153,11 @@ for memory, compatibility and error guarantees.
 
 ## Initial CMYK display route
 
-The checked transform API now accepts v2 CMYK `mft2` and v4 CMYK `mAB` A2B stages for relative
-colorimetric display conversion to RGB (or a standalone DeviceToPcs stage).
+The checked transform API now accepts v2 CMYK `mft2` and v4 CMYK `mAB` A2B stages for perceptual, relative
+colorimetric, and saturation display conversion to RGB (or a standalone DeviceToPcs stage).
 Samples are C/M/Y/K, 0 = no ink and 1 = maximum ink; u8/u16 scale to that range.
 Format-specific inversion and YCCK belong to callers. PCS remains D50 XYZ/Lab.
-CMYK output, other intents and other CMYK tag types remain unsupported.
+CMYK output, absolute intent and other CMYK tag types remain unsupported.
 
 The 4D CLUT uses all 16 hypercube corners with multilinear interpolation.
 Existing 1D/3D interpolation is unchanged. CMYK mft2 matrices must be identity.
@@ -199,3 +199,14 @@ API. It does not decode images, modify profiles, or claim full ICC conformance.
 ```sh
 cargo run --manifest-path tools/icc-cli/Cargo.toml -- --help
 ```
+
+### CMYK rendering intents
+
+CMYK input now selects A2B0 (perceptual), A2B1 (relative colorimetric), or
+A2B2 (saturation) for the supported v2 mft2 / v4 mAB display paths. Missing
+A2B1/A2B2 may use A2B0; RouteInfo reports this fallback. A malformed selected
+tag is never replaced by another tag. This executes profile-provided tables,
+not a newly invented gamut mapper or a guarantee of cross-CMS equivalence.
+Absolute CMYK intent, CMYK output, and BPC remain explicit unsupported errors.
+Existing non-relative matrix-route media-white requirements remain in force.
+See [intent validation](docs/cmyk-intents.md) for scope and black-box results.

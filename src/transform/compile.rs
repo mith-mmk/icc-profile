@@ -109,7 +109,7 @@ impl CompiledProfile {
     }
 
     /// Evaluate one pixel, leaving output bit-for-bit unchanged on every `Err`.
-    /// Uses three floats of stack scratch and one evaluation, then copies on
+    /// Uses four floats of stack scratch and one evaluation, then copies on
     /// success. Error diagnostics may allocate. Color semantics match
     /// `transform_f32` (physical D50 XYZ). No synchronization or panic rollback.
     pub fn transform_f32_atomic(
@@ -129,12 +129,12 @@ impl CompiledProfile {
                 actual: output.len(),
             });
         }
-        let mut scratch = [0.0; 3];
+        let mut scratch = [0.0; 4];
         let temporary =
             scratch
                 .get_mut(..output.len())
                 .ok_or(TransformError::UnsupportedProfileFeature(
-                    "atomic execution supports at most four input and three output channels",
+                    "atomic execution supports at most four input and output channels",
                 ))?;
         self.transform_f32(input, temporary)?;
         output.copy_from_slice(temporary);
@@ -350,6 +350,13 @@ impl Transform {
         {
             return Err(TransformError::UnsupportedProfileFeature(
                 "CMYK display transforms require RGB output",
+            ));
+        }
+        if output.color_space() == super::profile::ColorSpace::Cmyk
+            && input.color_space() != super::profile::ColorSpace::Rgb
+        {
+            return Err(TransformError::UnsupportedProfileFeature(
+                "CMYK output transforms require RGB input",
             ));
         }
         if options.black_point_compensation {
@@ -661,16 +668,17 @@ impl Transform {
     ) -> Result<(), TransformError> {
         self.validate_buffer_lengths(input.len(), output.len())?;
         const PIXELS: usize = 64;
-        const MAX_CHANNELS: usize = 3;
+        const SCRATCH_VALUES: usize = 192;
         let input_channels = self.input_channels();
         let output_channels = self.output_channels();
-        if input_channels > 4 || output_channels > MAX_CHANNELS {
+        if input_channels > 4 || output_channels > 4 {
             return Err(TransformError::UnsupportedProfileFeature(
-                "atomic execution supports at most four input and three output channels",
+                "atomic execution supports at most four input and output channels",
             ));
         }
-        let mut scratch = [0.0; PIXELS * MAX_CHANNELS];
-        for chunk in input.chunks(PIXELS * input_channels) {
+        let mut scratch = [0.0; SCRATCH_VALUES];
+        let chunk_pixels = PIXELS.min(SCRATCH_VALUES / output_channels);
+        for chunk in input.chunks(chunk_pixels * input_channels) {
             let count = chunk.len() / input_channels * output_channels;
             self.transform_f32(chunk, &mut scratch[..count])?;
         }

@@ -99,22 +99,37 @@ pub(super) fn plan_route_with_policy(
     if profile.color_space() == super::profile::ColorSpace::Cmyk {
         let version = profile.raw_version()[0];
         let kind = tag.and_then(|data| data.get(..4));
-        let supported = (version == 2 && kind == Some(&b"mft2"[..]))
-            || (version == 4 && kind == Some(&b"mAB "[..]));
-        let absolute = intent == RenderingIntent::AbsoluteColorimetric;
-        if !a_to_b
-            || !supported
-            || (absolute
-                && (owner_policy != OwnerPolicy::TransformStage
-                    || selection.signature != Some(*b"A2B1")
-                    || selection.used_fallback
-                    || profile.raw_device_class() != *b"prtr"))
-        {
-            return Err(TransformError::UnsupportedProfileFeature(
-                "CMYK requires v2 mft2 or v4 mAB DeviceToPcs; absolute requires an explicit printer A2B1 composite route",
-            ));
+        if a_to_b {
+            let supported = (version == 2 && kind == Some(&b"mft2"[..]))
+                || (version == 4 && kind == Some(&b"mAB "[..]));
+            let absolute = intent == RenderingIntent::AbsoluteColorimetric;
+            if !supported
+                || (absolute
+                    && (owner_policy != OwnerPolicy::TransformStage
+                        || selection.signature != Some(*b"A2B1")
+                        || selection.used_fallback
+                        || profile.raw_device_class() != *b"prtr"))
+            {
+                return Err(TransformError::UnsupportedProfileFeature(
+                    "CMYK requires v2 mft2 or v4 mAB DeviceToPcs; absolute requires an explicit printer A2B1 composite route",
+                ));
+            }
+        } else {
+            let supported = (version == 2 && kind == Some(&b"mft2"[..]))
+                || (version == 4 && kind == Some(&b"mBA "[..]));
+            if !supported
+                || intent != RenderingIntent::RelativeColorimetric
+                || profile.raw_device_class() != *b"prtr"
+                || selection.signature != Some(*b"B2A1")
+                || selection.used_fallback
+            {
+                return Err(TransformError::UnsupportedProfileFeature(
+                    "CMYK output requires an explicit relative printer B2A1 using v2 mft2 or v4 mBA",
+                ));
+            }
         }
     }
+
     let expected_channels = if a_to_b { (channels, 3) } else { (3, channels) };
     let model = if tag.is_some() {
         RouteModel::Lut

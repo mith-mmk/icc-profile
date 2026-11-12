@@ -81,7 +81,10 @@ impl LutTransform {
             MFT1 | MFT2 | MAB | MBA => {
                 let input = usize::from(data[8]);
                 let output = usize::from(data[9]);
-                if !(input == 4 && output == 3 && matches!(be_u32(data, 0)?, MFT2 | MAB)) {
+                let kind = be_u32(data, 0)?;
+                let cmyk_source = input == 4 && output == 3 && matches!(kind, MFT2 | MAB);
+                let cmyk_destination = input == 3 && output == 4 && matches!(kind, MFT2 | MBA);
+                if !cmyk_source && !cmyk_destination {
                     validate_channels(input)?;
                     validate_channels(output)?;
                 }
@@ -211,7 +214,7 @@ impl LutTransform {
                         clamp,
                     )?;
                 }
-                let mut clut_out = [0.0; 3];
+                let mut clut_out = [0.0; 4];
                 clut.eval(
                     &values[..self.input_channels],
                     &mut clut_out[..clut.channels],

@@ -436,7 +436,7 @@ fn checked_mab_shape(
             data,
             co,
             input_channels,
-            output_channels.min(3),
+            output_channels,
             limits,
         )?)
     };
@@ -476,7 +476,7 @@ fn checked_clut_shape(
     if grid_len == 0 {
         return Err(TransformError::InvalidProfile("CLUT has no grid"));
     }
-    if channels == 0 || channels > 3 || dimensions == 0 || dimensions > grid_len {
+    if channels == 0 || channels > 4 || dimensions == 0 || dimensions > grid_len {
         return Err(TransformError::UnsupportedProfileFeature(
             "CLUT channel count",
         ));

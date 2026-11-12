@@ -28,7 +28,7 @@ then converts physical XYZ to RGB. This does not estimate partial adaptation,
 black-point compensation, or paper simulation outside the admitted scope.
 
 The existing perceptual/relative/saturation paths and numerical algorithms are
-unchanged. CMYK output and BPC are still separate work. Finite positive media
+unchanged. Relative CMYK output is documented in cmyk-output.md; BPC remains separate work. Finite positive media
 whites alone do not authorize broader old-display or mixed-reference-medium
 behavior; rejected cases remain errors instead of guessed conversions.
 

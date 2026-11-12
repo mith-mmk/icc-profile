@@ -170,7 +170,7 @@ semantics are the same as the corresponding existing methods.
   on error with two passes and two 192-float chunk buffers (1536 bytes).
   Their `_atomic` methods are aliases, with no added pass or allocation.
 - `CompiledProfile::transform_f32_atomic` evaluates one pixel through its
-  physical D50 XYZ stage boundary into three stack floats (12 bytes), then
+  physical D50 XYZ stage boundary into four stack floats (16 bytes), then
   copies on success. It needs only one evaluation. Integer stage methods are
   intentionally absent: quantized normalized samples must not be confused
   with physical PCS values.

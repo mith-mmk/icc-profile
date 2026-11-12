@@ -1,0 +1,88 @@
+{
+  "source": "sRGB2014.icc",
+  "source_sha256": "384b832de3412066743b52a75ee906b6fb9fb8d9e09e936fc2c43223815c6e0a",
+  "destination": "PSOcoated_v3.icc",
+  "destination_sha256": "c30ad2c01e8f93135ec7682c535e0a81bc2d177c301e196376c5f5838b5c8e86",
+  "lcms_version": 2190,
+  "lcms_binary_sha256": "9d97fbd455063b3d06d07d93ab84aab62c38746329574f75984b25b7b125a7c2",
+  "moxcms_version": "0.9.2",
+  "icc_3d_interpolation": "tetrahedral",
+  "mox_requested_3d_interpolation": "tetrahedral",
+  "lcms_interpolation": "engine-selected",
+  "intent": "absolute_colorimetric",
+  "lcms_flags": "NOOPTIMIZE|NOCACHE (0x0140)",
+  "pixels": 4913,
+  "input_channels": 3,
+  "output_channels": 4,
+  "tolerance_codes": 1024,
+  "note": "screening tolerance, not a DeltaE accuracy guarantee",
+  "status": "icc parse=ok\nicc transform=ok\nmox parse=ok\nmox options=TransformOptions { rendering_intent: AbsoluteColorimetric, allow_use_cicp_transfer: false, prefer_fixed_point: false, interpolation_method: Tetrahedral, barycentric_weight_scale: Low }\nmox transform=ok\npixels=4913\n",
+  "comparison": {
+    "icc": {
+      "max_per_channel_codes": [
+        1367,
+        1623,
+        1516,
+        1336
+      ],
+      "worst_input_codes": [
+        4096,
+        16384,
+        20480
+      ],
+      "worst_actual_codes": [
+        60202,
+        22050,
+        17987,
+        44101
+      ],
+      "worst_reference_codes": [
+        60222,
+        23673,
+        19045,
+        43545
+      ],
+      "max_abs_codes": 1623,
+      "mean_abs_codes": 46.80902707103603,
+      "max_normalized": 0.02476539253833829,
+      "mean_normalized": 0.0007142599690399943,
+      "pixels_over_tolerance": 17,
+      "exact_match_pixels": 34,
+      "pixels_over_32_codes": 3368,
+      "pixels_over_256_codes": 541
+    },
+    "mox": {
+      "max_per_channel_codes": [
+        6204,
+        4731,
+        8961,
+        5564
+      ],
+      "worst_input_codes": [
+        24576,
+        8192,
+        8192
+      ],
+      "worst_actual_codes": [
+        9704,
+        65516,
+        51737,
+        44043
+      ],
+      "worst_reference_codes": [
+        9735,
+        65535,
+        60698,
+        41766
+      ],
+      "max_abs_codes": 8961,
+      "mean_abs_codes": 1303.7388052106655,
+      "max_normalized": 0.13673609521629665,
+      "mean_normalized": 0.019893778976282375,
+      "pixels_over_tolerance": 4837,
+      "exact_match_pixels": 0,
+      "pixels_over_32_codes": 4912,
+      "pixels_over_256_codes": 4911
+    }
+  }
+}

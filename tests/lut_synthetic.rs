@@ -2514,3 +2514,131 @@ fn cmyk_output_rgb_lut_source_and_mba_pre_clut_stages_keep_k() {
         for i in 0..4 {assert!((output[i]-expected[i]).abs()<3e-6,"v{version} {output:?} != {expected:?}");}
     }
 }
+
+
+fn cmyk_absolute_output_source(version: u8) -> Vec<u8> {
+    let mut bytes=with_d50_header(d50_matrix_rgb_profile());
+    bytes[8]=version;
+    let mut chad=vec![0;44];chad[..4].copy_from_slice(b"sf32");
+    for i in 0..3 {u32_at(&mut chad,8+16*i,98304);}
+    replace_fixture_tag(&bytes,*b"chad",Some(chad))
+}
+
+fn cmyk_absolute_output_destination(version: u8, pcs: [u8;4], white: [f32;3]) -> Vec<u8> {
+    let mut bytes=cmyk_output_profile(version,vec![(*b"B2A1",cmyk_output_tag(version)),(*b"wtpt",xyz(white[0],white[1],white[2]))]);
+    bytes[20..24].copy_from_slice(&pcs);
+    with_d50_header(bytes)
+}
+
+fn cmyk_absolute_output_oracle(rgb: [f32;3], version: u8, pcs: [u8;4], white: [f32;3], tri: bool) -> [f32;4] {
+    // Independent f64 matrix -> ICC absolute white ratio -> XYZ/Lab encoding.
+    // The source fixture has diagonal D50 colorants and identity TRCs.
+    let xyz: [f64;3]=std::array::from_fn(|i|rgb[i] as f64*(ABSOLUTE_D50[i] as f64).powi(2)/white[i] as f64);
+    let encoded=if pcs==*b"XYZ " {xyz.map(|v|v*32768.0/65535.0)} else {
+        let f=|t:f64|if t>216.0/24389.0 {t.cbrt()} else {(24389.0/27.0*t+16.0)/116.0};
+        let [fx,fy,fz]=[f(xyz[0]/0.9642),f(xyz[1]),f(xyz[2]/0.8249)];
+        let [l,a,b]=[116.0*fy-16.0,500.0*(fx-fy),200.0*(fy-fz)];
+        if version==2 {[l/100.0*65280.0/65535.0,(a+128.0)*256.0/65535.0,(b+128.0)*256.0/65535.0]}
+        else {[l/100.0,(a+128.0)/255.0,(b+128.0)/255.0]}
+    };
+    assert!(encoded.iter().all(|v|(0.0..=1.0).contains(v)),"oracle input outside domain: {encoded:?}");
+    let [x,y,z]=encoded;let cross=if tri {x*y} else {x.min(y)};
+    [50000.0*x/65535.0,40000.0*y/65535.0,30000.0*z/65535.0,(10000.0+20000.0*cross+10000.0*z)/65535.0*(32768.0/65535.0)].map(|v|v as f32)
+}
+
+#[test]
+fn cmyk_absolute_output_xyz_lab_versions_and_chad_match_independent_oracle() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D};
+    let white=[0.75,0.875,0.625];
+    for source_version in [2,4] {for version in [2,4] {for pcs in [*b"XYZ ",*b"Lab "] {
+        let source_bytes=cmyk_absolute_output_source(source_version);
+        let source=Profile::parse(&source_bytes).unwrap();
+        let destination=Profile::parse(&cmyk_absolute_output_destination(version,pcs,white)).unwrap();
+        assert!(destination.compile(TransformDirection::PcsToDevice,RenderingIntent::AbsoluteColorimetric,TransformLimits::default()).is_err());
+        for interpolation in [ClutInterpolation3D::Tetrahedral,ClutInterpolation3D::Trilinear] {
+            let algorithms=AlgorithmProfile::default().with_clut_3d(interpolation);
+            let transform=Transform::new(&source,&destination,absolute_options()).unwrap().with_algorithm_profile(algorithms);
+            let without_chad=Profile::parse(&replace_fixture_tag(&source_bytes,*b"chad",None)).unwrap();
+            let no_chad=Transform::new(&without_chad,&destination,absolute_options()).unwrap().with_algorithm_profile(algorithms);
+            assert_eq!(transform.output_route_info().selected_tag(),Some(*b"B2A1"));
+            assert_eq!(transform.output_route_info().requested_intent(),RenderingIntent::AbsoluteColorimetric);
+            assert!(!transform.output_route_info().used_fallback());
+            for input in [[0.0,0.0,0.0],[0.002,0.003,0.004],[0.02,0.03,0.04],[0.2,0.3,0.4]] {
+                let mut output=[0.0;4];transform.transform_f32_atomic(&input,&mut output).unwrap();
+                let expected=cmyk_absolute_output_oracle(input,version,pcs,white,interpolation==ClutInterpolation3D::Trilinear);
+                for i in 0..4 {assert!((output[i]-expected[i]).abs()<4e-6,"source v{source_version}, destination v{version} {pcs:?}: {output:?} != {expected:?}");}
+                let mut unadapted=[0.0;4];no_chad.transform_f32_atomic(&input,&mut unadapted).unwrap();assert_eq!(output,unadapted);
+            }
+            atomic_contract::check_atomic_contract(&transform);
+        }
+    }}}
+}
+
+#[test]
+fn cmyk_absolute_output_four_channel_chunks_and_late_failure_are_atomic() {
+    let white=[0.75,0.875,0.625];
+    let source=Profile::parse(&cmyk_absolute_output_source(2)).unwrap();
+    for version in [2,4] {for pcs in [*b"XYZ ",*b"Lab "] {
+        let destination=Profile::parse(&cmyk_absolute_output_destination(version,pcs,white)).unwrap();
+        let transform=Transform::new(&source,&destination,absolute_options()).unwrap();
+        for pixels in [0,1,47,48,49,95,96,97,129] {
+            let input:Vec<_>=(0..pixels*3).map(|i|[0.2,0.3,0.4][i%3]).collect();
+            let mut output=vec![0.0;pixels*4];transform.worker().transform_f32_atomic(&input,&mut output).unwrap();
+            let expected=cmyk_absolute_output_oracle([0.2,0.3,0.4],version,pcs,white,false);
+            for pixel in output.chunks_exact(4) {for i in 0..4 {assert!((pixel[i]-expected[i]).abs()<4e-6);}}
+            for denom in [255.0,65535.0] {
+                let input_codes:Vec<_>=input.iter().map(|v|(v*denom).round() as u16).collect();
+                let mut output_codes=vec![0u16;pixels*4];
+                if denom==255.0 {
+                    let input8:Vec<_>=input_codes.iter().map(|v|*v as u8).collect();let mut output8=vec![0;pixels*4];
+                    transform.worker().transform_u8_atomic(&input8,&mut output8).unwrap();
+                    for (dst,src) in output_codes.iter_mut().zip(output8) {*dst=src as u16;}
+                } else {transform.worker().transform_u16_atomic(&input_codes,&mut output_codes).unwrap();}
+                if pixels>0 {
+                    let expected=cmyk_absolute_output_oracle([input_codes[0],input_codes[1],input_codes[2]].map(|v|v as f32/denom),version,pcs,white,false).map(|v|(v*denom).round() as u16);
+                    for pixel in output_codes.chunks_exact(4) {for i in 0..4 {assert!((pixel[i] as i32-expected[i] as i32).abs()<=1);}}
+                }
+            }
+        }
+        for bad in [f32::NAN,f32::INFINITY,1.1,-0.1] {
+            let mut input=vec![0.2;129*3];*input.last_mut().unwrap()=bad;
+            let mut output=vec![-0.0_f32;129*4];assert!(transform.transform_f32_atomic(&input,&mut output).is_err());
+            assert!(output.iter().all(|v|v.to_bits()==(-0.0_f32).to_bits()));
+        }
+        let mut output=[-0.0_f32;3];assert!(transform.transform_f32_atomic(&[0.2,0.3,0.4],&mut output).is_err());
+        assert!(output.iter().all(|v|v.to_bits()==(-0.0_f32).to_bits()));
+    }}
+}
+
+#[test]
+fn cmyk_absolute_output_rejects_unproved_sources_and_white_metadata() {
+    for source_version in [2,4] {for version in [2,4] {
+        let source=cmyk_absolute_output_source(source_version);
+        let destination=cmyk_absolute_output_destination(version,*b"XYZ ",[0.75,0.875,0.625]);
+        let rejects=|src:&[u8],dst:&[u8]|assert!(Transform::new(&Profile::parse(src).unwrap(),&Profile::parse(dst).unwrap(),absolute_options()).is_err());
+        for src_side in [false,true] {
+            for replacement in [None,Some(b"bad!".to_vec()),Some(xyz(0.0,1.0,0.8)),Some(xyz(-0.5,1.0,0.8))] {
+                if src_side {rejects(&replace_fixture_tag(&source,*b"wtpt",replacement),&destination);}
+                else {rejects(&source,&replace_fixture_tag(&destination,*b"wtpt",replacement));}
+            }
+            for (at,value) in [(68,63189),(72,65535),(76,54062)] {
+                let mut bad=if src_side {source.clone()} else {destination.clone()};u32_at(&mut bad,at,value);
+                if src_side {rejects(&bad,&destination);} else {rejects(&source,&bad);}
+            }
+            for class in [*b"scnr",*b"spac",*b"link"] {
+                let mut bad=if src_side {source.clone()} else {destination.clone()};bad[12..16].copy_from_slice(&class);
+                if src_side {rejects(&bad,&destination);} else {rejects(&source,&bad);}
+            }
+        }
+        rejects(&replace_fixture_tag(&source,*b"wtpt",Some(xyz(0.9505,1.0,1.089))),&destination);
+        rejects(&replace_fixture_tag(&source,*b"A2B1",Some(identity_mft2())),&destination);
+        rejects(&replace_fixture_tag(&source,*b"A2B1",Some(b"bad!".to_vec())),&destination);
+        let missing=replace_fixture_tag(&destination,*b"B2A1",None);
+        rejects(&source,&missing);
+        // Construct an otherwise valid B2A0-only printer; absolute must not fall back.
+        let fallback=with_d50_header(cmyk_output_profile(version,vec![(*b"B2A0",cmyk_output_tag(version)),(*b"wtpt",xyz(0.75,0.875,0.625))]));
+        rejects(&source,&fallback);
+        rejects(&source,&replace_fixture_tag(&destination,*b"B2A1",Some(b"bad!".to_vec())));
+        assert!(Transform::new(&Profile::parse(&source).unwrap(),&Profile::parse(&destination).unwrap(),TransformOptions{black_point_compensation:true,..absolute_options()}).is_err());
+    }}
+}

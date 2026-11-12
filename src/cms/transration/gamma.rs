@@ -1,6 +1,19 @@
 use crate::{ICCNumber, ParametricCurve};
 use std::io::{Error,ErrorKind};
 
+/// Evaluate the legacy byte-domain parametric curve helper.
+///
+/// Input bytes are used directly as `x` in `0..=255`, not normalized ICC
+/// coordinates. Finite results are rounded and clamped to a byte; for example,
+/// type 0 with gamma 2 maps 128 to 255. Unknown function types remain identity.
+/// Empty batches succeed without evaluating or validating the curve.
+///
+/// # Errors
+///
+/// Returns an error for short input, missing coefficients, a zero divisor `a`
+/// in types 1 or 2, or a nonfinite evaluated result (including invalid real
+/// power domains and overflow). Types 3 and 4 do not divide by `a` and may use
+/// zero `a` when the selected branch yields a finite result.
 pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:ParametricCurve) -> Result<Vec<u8>, Error>{
     if buf.len() < entry {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
@@ -20,6 +33,9 @@ pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:Parametr
     let mut p = vec![];
     for val in prametic_curve.vals {
         p.push(val.as_f64())
+    }
+    if entry != 0 && matches!(prametic_curve.funtion_type, 1 | 2) && p[1] == 0.0 {
+        return Err(Error::new(ErrorKind::InvalidInput, "Parametric curve has zero divisor a"));
     }
     let mut data = vec![];
  
@@ -79,6 +95,9 @@ pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:Parametr
                 };
             },
             _ => { y = x; }
+        }
+        if !y.is_finite() {
+            return Err(Error::new(ErrorKind::InvalidInput, "Parametric curve result is not finite"));
         }
         data.push(((y + 0.5) as i16).clamp(0, 255) as u8);
     }

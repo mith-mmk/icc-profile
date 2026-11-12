@@ -189,3 +189,13 @@ apply only to the matching CLUT dimensionality, not matrix or 1D paths. There
 are no placeholder CMS modes or accepted-but-unimplemented algorithms. Future
 presets can bundle additional validated choices without claiming exact CMS
 compatibility. Intent, clipping, BPC, and atomicity are independent contracts.
+
+## Command-line inspection and sample conversion
+
+The standalone, non-published [icc-cli](tools/icc-cli/README.md) provides
+`inspect`, `validate`, and numeric-sample `convert` commands through the checked
+API. It does not decode images, modify profiles, or claim full ICC conformance.
+
+```sh
+cargo run --manifest-path tools/icc-cli/Cargo.toml -- --help
+```

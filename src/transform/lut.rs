@@ -80,8 +80,10 @@ impl LutTransform {
             MFT1 | MFT2 | MAB | MBA => {
                 let input = usize::from(data[8]);
                 let output = usize::from(data[9]);
-                validate_channels(input)?;
-                validate_channels(output)?;
+                if !(input == 4 && output == 3 && be_u32(data, 0)? == MFT2) {
+                    validate_channels(input)?;
+                    validate_channels(output)?;
+                }
                 Ok((input, output))
             }
             _ => Err(TransformError::UnsupportedProfileFeature("LUT tag type")),
@@ -174,7 +176,7 @@ impl LutTransform {
                 "LUT input is outside the normalized domain".into(),
             ));
         }
-        let mut normalized = [0.0; 3];
+        let mut normalized = [0.0; 4];
         normalized[..input.len()].copy_from_slice(input);
         if clamp {
             for value in &mut normalized[..input.len()] {
@@ -189,9 +191,9 @@ impl LutTransform {
                 clut,
                 output: ot,
             } => {
-                let mut v = [0.0; 3];
-                if self.input_channels == 1 {
-                    v[0] = input[0];
+                let mut v = [0.0; 4];
+                if self.input_channels != 3 {
+                    v[..input.len()].copy_from_slice(input);
                 } else {
                     for r in 0..3 {
                         v[r] = matrix[r][0] * input[0]
@@ -199,7 +201,7 @@ impl LutTransform {
                             + matrix[r][2] * input[2];
                     }
                 }
-                let mut values = [0.0; 3];
+                let mut values = [0.0; 4];
                 for c in 0..self.input_channels {
                     values[c] = table_eval(
                         &it[c],
@@ -701,7 +703,7 @@ impl Clut {
                 "CLUT input is outside the normalized domain".into(),
             ));
         }
-        let mut normalized = [0.0; 3];
+        let mut normalized = [0.0; 4];
         normalized[..input.len()].copy_from_slice(input);
         if clamp {
             for value in &mut normalized[..input.len()] {
@@ -709,6 +711,41 @@ impl Clut {
             }
         }
         let input = &normalized[..input.len()];
+        if self.grid.len() == 4 {
+            // Multilinear interpolation over every one of the 16 hypercube
+            // corners. ICC CLUT ordering has the first input axis slowest.
+            let mut lower = [0usize; 4];
+            let mut fraction = [0.0f32; 4];
+            for axis in 0..4 {
+                let position = input[axis] * (self.grid[axis] - 1) as f32;
+                lower[axis] = (position.floor() as usize).min(self.grid[axis] - 2);
+                fraction[axis] = position - lower[axis] as f32;
+            }
+            output.fill(0.0);
+            for corner in 0..16 {
+                let mut weight = 1.0;
+                let mut index = 0;
+                for axis in 0..4 {
+                    let upper = (corner >> axis) & 1;
+                    weight *= if upper == 0 {
+                        1.0 - fraction[axis]
+                    } else {
+                        fraction[axis]
+                    };
+                    index = index * self.grid[axis] + lower[axis] + upper;
+                }
+                for channel in 0..self.channels {
+                    output[channel] += weight * self.values[index * self.channels + channel];
+                }
+            }
+            // Table entries and weights are normalized. A convex combination
+            // is in [0,1]; contain f32 summation roundoff without relaxing the
+            // strict input-domain checks above.
+            for value in output.iter_mut().take(self.channels) {
+                *value = value.clamp(0.0, 1.0);
+            }
+            return Ok(());
+        }
         if self.grid.len() == 1 {
             let p =
                 input.first().copied().unwrap_or(0.0).clamp(0.0, 1.0) * (self.grid[0] - 1) as f32;

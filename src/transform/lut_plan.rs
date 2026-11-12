@@ -317,7 +317,7 @@ fn checked_mft_shape(data: &[u8], pcs: Pcs) -> Result<LutShape<'_>, TransformErr
     for index in 0..9 {
         matrix[index / 3][index % 3] = be_i32(data, 12 + index * 4)? as f32 / 65536.0;
     }
-    if pcs == Pcs::Lab
+    if (pcs == Pcs::Lab || input_channels == 4)
         && matrix.iter().enumerate().any(|(row, values)| {
             values
                 .iter()
@@ -326,7 +326,7 @@ fn checked_mft_shape(data: &[u8], pcs: Pcs) -> Result<LutShape<'_>, TransformErr
         })
     {
         return Err(TransformError::InvalidProfile(
-            "LUT matrix must be identity for Lab PCS",
+            "LUT matrix must be identity for Lab PCS or CMYK input",
         ));
     }
     Ok(LutShape {

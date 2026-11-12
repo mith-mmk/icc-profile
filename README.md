@@ -149,3 +149,17 @@ transactional. The f32 atomic variant uses two evaluation passes and fixed
 These are output transactions, not synchronization or panic rollback.
 See [the execution contract](docs/cms-0.1.0-plan.md#borrowed-output-transaction-contract)
 for memory, compatibility and error guarantees.
+
+## Initial CMYK display route
+
+The checked transform API now accepts v2 CMYK `mft2` A2B stages for relative
+colorimetric display conversion to RGB (or a standalone DeviceToPcs stage).
+Samples are C/M/Y/K, 0 = no ink and 1 = maximum ink; u8/u16 scale to that range.
+Format-specific inversion and YCCK belong to callers. PCS remains D50 XYZ/Lab.
+CMYK output, other intents, v4 CMYK and other tag types remain unsupported.
+
+The 4D CLUT uses all 16 hypercube corners with multilinear interpolation.
+Existing 1D/3D interpolation is unchanged. CMYK mft2 matrices must be identity.
+Integer execution retains two 192-float buffers, using 48-pixel chunks for CMYK
+instead of 64. Borrowed f32 atomic output scratch remains 192 floats; device
+normalization/evaluator scratch grows to four components. Alpha is not added.

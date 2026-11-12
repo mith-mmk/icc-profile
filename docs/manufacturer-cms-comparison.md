@@ -94,3 +94,18 @@ output prefix, preventing stale output from masquerading as a successful run.
 A different DLL build with the same version is recorded by hash and may differ.
 The harness is deliberately Windows-local for this run, not a portable CI job.
 Raw aggregate records are in `cms-comparison-results/*-tetra.json`.
+
+## CMYK v2 implementation checkpoint
+
+The initial display-only route now admits v2 mft2 CMYK DeviceToPcs and RGB
+output with relative colorimetric intent only. Four-dimensional multilinear
+CLUT interpolation uses all 16 corners, first input axis slowest. Input table
+application precedes interpolation; output tables follow it. The CMYK mft2
+matrix is required to be identity (ICC.1:2022 lut16Type, non-PCSXYZ input).
+No legacy CMYK fallback or external CMS implementation is used.
+
+Heidelberg PSOcoated_v3 -> sRGB2014, same fixed comparison conditions above:
+6561 points succeeded; maximum RGB16 difference 75, mean 9.6887 codes versus
+LittleCMS 2.19; >32: 1030 points, >256: 0, >1024: 0. This establishes initial
+coverage, not DeltaE acceptance or printing/separation support. The JSON is
+`cms-comparison-results/heidelberg-cmyk-v2.json`.

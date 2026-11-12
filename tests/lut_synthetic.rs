@@ -1772,3 +1772,96 @@ fn benchmark_atomic_lut() {
     }).unwrap();
     atomic_contract::benchmark_atomic(&transform, "RGB mft2 LUT pair");
 }
+
+fn cmyk_mft2_profile() -> Vec<u8> {
+    let mut tag = vec![0u8; 52];
+    tag[..4].copy_from_slice(b"mft2");
+    tag[8] = 4; tag[9] = 3; tag[10] = 2;
+    for i in 0..3 { u32_at(&mut tag, 12 + i * 16, 65536); }
+    tag[48..50].copy_from_slice(&2u16.to_be_bytes());
+    tag[50..52].copy_from_slice(&2u16.to_be_bytes());
+    for _ in 0..4 { tag.extend_from_slice(&[0,0,255,255]); }
+    for c in 0..2 { for m in 0..2 { for y in 0..2 { for k in 0..2 {
+        // Distinct cross-axis products exercise all 16 corners, ordering and K.
+        for v in [c*m, y*k, c*k] { tag.extend_from_slice(&(v as u16 * 16384).to_be_bytes()); }
+    }}}}
+    for _ in 0..3 { tag.extend_from_slice(&[0,0,255,255]); }
+    let mut bytes = profile(*b"CMYK", vec![(*b"A2B1", tag)]);
+    bytes[8] = 2;
+    bytes
+}
+
+#[test]
+fn cmyk_v2_mft2_four_dimensional_corners_and_interiors() {
+    let p = Profile::parse(&cmyk_mft2_profile()).unwrap();
+    let stage = p.compile(TransformDirection::DeviceToPcs, RenderingIntent::RelativeColorimetric, TransformLimits::default()).unwrap();
+    assert_eq!((stage.input_channels(), stage.output_channels()), (4,3));
+    for c in [0.0,0.3,1.0] { for m in [0.0,0.6,1.0] { for y in [0.0,0.2,1.0] { for k in [0.0,0.8,1.0] {
+        let mut actual = [0.0;3];
+        stage.transform_f32_atomic(&[c,m,y,k], &mut actual).unwrap();
+        for (a,e) in actual.iter().zip([0.5*c*m,0.5*y*k,0.5*c*k]) { assert!((a-e).abs()<1e-6, "{actual:?}"); }
+    }}}}
+}
+
+#[test]
+fn cmyk_v2_display_atomic_and_domain_contracts() {
+    let source = Profile::parse(&cmyk_mft2_profile()).unwrap();
+    let destination = Profile::parse(&d50_matrix_rgb_profile()).unwrap();
+    let transform = Transform::new(&source,&destination,TransformOptions::default()).unwrap();
+    atomic_contract::check_atomic_contract(&transform);
+    for pixels in [47,48,49,95,96,97] {
+        let input=vec![0.5;pixels*4];let mut output=vec![0.0;pixels*3];
+        transform.transform_f32_atomic(&input,&mut output).unwrap();
+        transform.worker().transform_u16_atomic(&vec![32768;pixels*4],&mut vec![0;pixels*3]).unwrap();
+    }
+    let strict = Transform::new(&source,&destination,TransformOptions {clamp:false,..TransformOptions::default()}).unwrap();
+    let mut input=vec![0.5;129*4];*input.last_mut().unwrap()=1.1;
+    let mut output=vec![-0.0_f32;129*3];
+    assert!(strict.transform_f32_atomic(&input,&mut output).is_err());
+    assert!(output.iter().all(|v|v.to_bits()==(-0.0_f32).to_bits()));
+    transform.transform_f32_atomic(&input,&mut output).unwrap();
+}
+
+#[test]
+fn cmyk_v2_scope_limits_and_malformed_matrix() {
+    let bytes=cmyk_mft2_profile();let p=Profile::parse(&bytes).unwrap();
+    assert!(matches!(p.compile(TransformDirection::PcsToDevice,RenderingIntent::RelativeColorimetric,TransformLimits::default()),Err(TransformError::UnsupportedProfileFeature(_))));
+    assert!(matches!(p.compile(TransformDirection::DeviceToPcs,RenderingIntent::Perceptual,TransformLimits::default()),Err(TransformError::UnsupportedProfileFeature(_))));
+    let limits=TransformLimits::builder().max_clut_entries(47).build().unwrap();
+    assert!(matches!(p.compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,limits),Err(TransformError::ResourceLimit(_))));
+    let limits=TransformLimits::builder().max_clut_entries(48).build().unwrap();
+    p.compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,limits).unwrap();
+    let mut bad=bytes.clone();u32_at(&mut bad,144+12,32768);
+    assert!(Profile::parse(&bad).unwrap().compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()).is_err());
+    let mut wrong_version=bytes;wrong_version[8]=4;
+    assert!(matches!(Profile::parse(&wrong_version).unwrap().compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()),Err(TransformError::UnsupportedProfileFeature(_))));
+}
+
+#[test]
+fn cmyk_v2_rejects_truncation_and_oversized_grid_without_execution() {
+    for length in [0,128,144,160,200] {
+        let mut bytes=cmyk_mft2_profile();bytes.truncate(length);
+        assert!(Profile::parse(&bytes).is_err());
+    }
+    let mut bytes=cmyk_mft2_profile();bytes[144+10]=255;
+    assert!(Profile::parse(&bytes).unwrap().compile(TransformDirection::DeviceToPcs,
+        RenderingIntent::RelativeColorimetric,TransformLimits::default()).is_err());
+    let source=Profile::parse(&cmyk_mft2_profile()).unwrap();
+    let limits=TransformLimits::builder().max_compiled_bytes(1).build().unwrap();
+    assert!(matches!(source.compile(TransformDirection::DeviceToPcs,
+        RenderingIntent::RelativeColorimetric,limits),Err(TransformError::ResourceLimit(_))));
+}
+
+#[test]
+fn cmyk_v2_saturated_clut_does_not_fail_strict_domain_from_roundoff() {
+    let mut bytes=cmyk_mft2_profile();
+    // Four input tables (4 entries each in bytes), then 16*3 u16 corners.
+    bytes[144+52+16..144+52+16+16*3*2].fill(255);
+    let stage=Profile::parse(&bytes).unwrap().compile(TransformDirection::DeviceToPcs,
+        RenderingIntent::RelativeColorimetric,TransformLimits::default()).unwrap();
+    for i in 0..1000 {
+        let input=[(i%97) as f32/97.0,(i%89) as f32/89.0,(i%83) as f32/83.0,(i%79) as f32/79.0];
+        let mut output=[0.0;3];stage.transform_f32_atomic(&input,&mut output).unwrap();
+        assert!(output.iter().all(|v| (*v-65535.0/32768.0).abs()<2e-6));
+    }
+}

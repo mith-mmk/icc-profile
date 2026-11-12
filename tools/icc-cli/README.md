@@ -44,7 +44,7 @@ selection, or alpha handling. The header intent does not override `--intent`.
 
 Samples are separated by commas or ASCII whitespace. Empty comma fields fail.
 Multiple pixels are interleaved in device channel order (Gray; R,G,B; C,M,Y,K for
-supported CMYK source routes). The component count must be a positive multiple of
+supported CMYK input/output routes). The component count must be a positive multiple of
 source channel count. f32 inputs must be finite in inclusive 0..1; u8 and u16 must
 be integers in inclusive 0..255 and 0..65535. Output uses the same numeric type,
 space-separated channels and newline-separated pixels. Decimal floats use Rust's
@@ -55,8 +55,20 @@ Black point compensation is off and output clipping is on. The 3D interpolation
 choice affects only 3D CLUTs; 4D remains multilinear. Matrix/curve-only paths are
 unaffected. Unsupported routes fail rather than using legacy approximations.
 The checked engine's documented same-direction intent tag selection/fallback is
-retained. CMYK is limited to the engine's supported relative-colorimetric source
-route; there is no general CMYK-output support or engine compatibility promise.
+retained within each supported route. CMYK support is explicitly bounded:
+
+- CMYK input to RGB supports [perceptual, relative and saturation intents](../../docs/cmyk-intents.md)
+  through v2 mft2 / v4 mAB, plus [restricted absolute display](../../docs/cmyk-absolute.md)
+  from a printer profile to a D50 RGB matrix/TRC monitor.
+- RGB input to CMYK printer output supports [relative intent](../../docs/cmyk-output.md)
+  through explicit v2 mft2 / v4 mBA B2A1, plus [restricted absolute output](../../docs/cmyk-output-absolute.md)
+  from a D50 RGB matrix/TRC monitor. [Perceptual](../../docs/cmyk-output-perceptual.md)
+  and [saturation](../../docs/cmyk-output-saturation.md) output require explicit,
+  matching v4 RGB input and v4 printer output LUTs with D50 PCS headers.
+
+The linked contracts specify additional profile/tag and media-white restrictions;
+this is not general CMYK support or an engine compatibility promise. The CLI has
+no BPC option: black point compensation remains off for all routes.
 
 All computations finish before result text is written to stdout. On argument,
 profile, or transform failure stdout is empty; diagnostics go to stderr. A stdout

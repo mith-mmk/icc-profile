@@ -45,8 +45,8 @@ pub fn main() -> std::io::Result<()> {
                         let y0 = ((y as usize * 255) / 20).clamp(0,255);
                         let k0 = ((k as usize * 255) / 20).clamp(0,255);
 
-                        let (l,la,lb) = cmyk_to_lab_lut16(c0 as u8,m0 as u8,y0 as u8,k0 as u8,lut16);
-                        let (c1,m1,y1,k1) = lab_f64_to_cmyk_lut8_u8(l,la,la,lut8);
+                        let (l,la,lb) = try_cmyk_to_lab_lut16(c0 as u8,m0 as u8,y0 as u8,k0 as u8,lut16)?;
+                        let (c1,m1,y1,k1) = try_lab_f64_to_cmyk_lut8_u8(l,la,lb,lut8)?;
                         println!("CMYK {} {} {} {}",c0,m0,y0,k0);
                         println!("Lab {} {} {}",l,la,lb);
                         println!("CMYK {} {} {} {}",c1,m1,y1,k1);

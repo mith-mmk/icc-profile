@@ -252,3 +252,9 @@ this is not a claim of final ISO 18619 conformance. Auxiliary LUTs and fixed ram
 storage count toward construction admission and are discarded after estimation.
 `cmyk_output_bpc_diagnostics()` exposes the selected interpolation's immutable
 estimate. See [CMYK output BPC](docs/cmyk-output-bpc.md) for scope and validation.
+
+## Checked legacy LUT helpers
+
+Legacy scalar LUT helpers have additive `try_` variants returning `std::io::Result`.
+Use these for malformed-payload error handling; original scalar signatures retain
+explicit panic behavior. See [migration, units, and route limits](docs/legacy-lut-checked.md).

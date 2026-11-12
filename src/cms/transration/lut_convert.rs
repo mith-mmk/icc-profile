@@ -1,7 +1,22 @@
 //! Legacy LUT helpers. Inputs retain their encoded byte domain and LUT16 outputs
-//! retain the raw 0..65535 domain. Invalid public LUT payloads panic explicitly;
-//! batch wrappers report InvalidInput instead. Three-channel helpers retain their
+//! retain the raw 0..65535 domain. Prefer the additive `try_` scalar APIs, which
+//! return `InvalidInput` for malformed public payloads. Old tuple-returning helpers
+//! explicitly panic on invalid input. Batch wrappers use checked calls.
+//! Three-channel helpers retain their
 //! historical matrix stage (these APIs have no PCS metadata).
+//!
+//! # Migration
+//! ```
+//! use icc_profile::{Mft2, cms::transration::try_cmyk_to_lab_lut16};
+//! fn convert(lut: &Mft2) -> std::io::Result<(f64, f64, f64)> {
+//!     // Previously: cmyk_to_lab_lut16(0, 0, 0, 0, lut)
+//!     try_cmyk_to_lab_lut16(0, 0, 0, 0, lut)
+//! }
+//! ```
+//! These helpers evaluate only the supplied LUT. They do not choose profile tags,
+//! rendering intents, PCS encoding, or chromatic adaptation. They are not a
+//! replacement for a compiled profile transform. See `docs/legacy-lut-checked.md`.
+
 use crate::iccprofile::{ICCNumber, S15Fixed16Number};
 use crate::{Mft1, Mft2};
 use std::io::{Error, ErrorKind, Result};
@@ -163,9 +178,9 @@ fn evaluate<T: Copy + Into<f64>, const N: usize, const M: usize>(
     output
 }
 
-fn lut8<const N: usize, const M: usize>(input: [u8; N], lut: &Mft1) -> [u8; M] {
-    check8(lut, N, M).expect("Invalid legacy LUT8 payload");
-    evaluate::<_, N, M>(
+fn lut8<const N: usize, const M: usize>(input: [u8; N], lut: &Mft1) -> Result<[u8; M]> {
+    check8(lut, N, M)?;
+    Ok(evaluate::<_, N, M>(
         input,
         &lut.e_params,
         lut.number_of_clut_grid_points as usize,
@@ -173,11 +188,11 @@ fn lut8<const N: usize, const M: usize>(input: [u8; N], lut: &Mft1) -> [u8; M] {
         (256, 256),
         255.0,
     )
-    .map(|v| v.round().clamp(0.0, 255.0) as u8)
+    .map(|v| v.round().clamp(0.0, 255.0) as u8))
 }
-fn lut16<const N: usize, const M: usize>(input: [u8; N], lut: &Mft2) -> [f64; M] {
-    check16(lut, N, M).expect("Invalid legacy LUT16 payload");
-    evaluate(
+fn lut16<const N: usize, const M: usize>(input: [u8; N], lut: &Mft2) -> Result<[f64; M]> {
+    check16(lut, N, M)?;
+    Ok(evaluate(
         input,
         &lut.e_params,
         lut.number_of_clut_grid_points as usize,
@@ -187,53 +202,157 @@ fn lut16<const N: usize, const M: usize>(input: [u8; N], lut: &Mft2) -> [f64; M]
             lut.output_table_enteries as usize,
         ),
         65535.0,
-    )
+    ))
 }
 
 /// Evaluate a 4-input, 3-output legacy LUT; panics on malformed payloads.
+/// Compatibility wrapper for [`try_d4_to_d3_lut8`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
 pub fn d4_to_d3_lut8(c0: u8, c1: u8, c2: u8, c3: u8, lut: &Mft1) -> (u8, u8, u8) {
-    let v = lut8::<4, 3>([c0, c1, c2, c3], lut);
-    (v[0], v[1], v[2])
+    try_d4_to_d3_lut8(c0, c1, c2, c3, lut).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_d4_to_d3_lut8(c0: u8, c1: u8, c2: u8, c3: u8, lut: &Mft1) -> Result<(u8, u8, u8)> {
+    let v = lut8::<4, 3>([c0, c1, c2, c3], lut)?;
+    Ok((v[0], v[1], v[2]))
 }
 
 /// Evaluate a 3-input, 4-output legacy LUT; panics on malformed payloads.
+/// Compatibility wrapper for [`try_d3_to_d4_lut8`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
 pub fn d3_to_d4_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> (u8, u8, u8, u8) {
-    let v = lut8::<3, 4>([c0, c1, c2], lut);
-    (v[0], v[1], v[2], v[3])
+    try_d3_to_d4_lut8(c0, c1, c2, lut).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_d3_to_d4_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> Result<(u8, u8, u8, u8)> {
+    let v = lut8::<3, 4>([c0, c1, c2], lut)?;
+    Ok((v[0], v[1], v[2], v[3]))
 }
 
 /// Evaluate a 3-input, 3-output legacy LUT; panics on malformed payloads.
+/// Compatibility wrapper for [`try_d3_to_d3_lut8`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
 pub fn d3_to_d3_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> (u8, u8, u8) {
-    let v = lut8::<3, 3>([c0, c1, c2], lut);
-    (v[0], v[1], v[2])
+    try_d3_to_d3_lut8(c0, c1, c2, lut).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_d3_to_d3_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> Result<(u8, u8, u8)> {
+    let v = lut8::<3, 3>([c0, c1, c2], lut)?;
+    Ok((v[0], v[1], v[2]))
 }
 
 /// Evaluate a 3-input, 1-output legacy LUT; panics on malformed payloads.
+/// Compatibility wrapper for [`try_d3_to_d1_lut8`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
 pub fn d3_to_d1_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> u8 {
-    let v = lut8::<3, 1>([c0, c1, c2], lut);
-    v[0]
+    try_d3_to_d1_lut8(c0, c1, c2, lut).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_d3_to_d1_lut8(c0: u8, c1: u8, c2: u8, lut: &Mft1) -> Result<u8> {
+    let v = lut8::<3, 1>([c0, c1, c2], lut)?;
+    Ok(v[0])
 }
 
 /// Evaluate a 4-input, 3-output legacy LUT; panics on malformed payloads.
+/// Compatibility wrapper for [`try_d4_to_d3_lut16`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
 pub fn d4_to_d3_lut16(c0: u8, c1: u8, c2: u8, c3: u8, lut: &Mft2) -> (f64, f64, f64) {
-    let v = lut16::<4, 3>([c0, c1, c2, c3], lut);
-    (v[0], v[1], v[2])
+    try_d4_to_d3_lut16(c0, c1, c2, c3, lut).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_d4_to_d3_lut16(c0: u8, c1: u8, c2: u8, c3: u8, lut: &Mft2) -> Result<(f64, f64, f64)> {
+    let v = lut16::<4, 3>([c0, c1, c2, c3], lut)?;
+    Ok((v[0], v[1], v[2]))
 }
 
 /// Evaluate a 3-input, 4-output legacy LUT; panics on malformed payloads.
+/// Compatibility wrapper for [`try_d3_to_d4_lut16`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
 pub fn d3_to_d4_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> (f64, f64, f64, f64) {
-    let v = lut16::<3, 4>([c0, c1, c2], lut);
-    (v[0], v[1], v[2], v[3])
+    try_d3_to_d4_lut16(c0, c1, c2, lut).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_d3_to_d4_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> Result<(f64, f64, f64, f64)> {
+    let v = lut16::<3, 4>([c0, c1, c2], lut)?;
+    Ok((v[0], v[1], v[2], v[3]))
 }
 
 /// Evaluate a 3-input, 3-output legacy LUT; panics on malformed payloads.
+/// Compatibility wrapper for [`try_d3_to_d3_lut16`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
 pub fn d3_to_d3_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> (f64, f64, f64) {
-    let v = lut16::<3, 3>([c0, c1, c2], lut);
-    (v[0], v[1], v[2])
+    try_d3_to_d3_lut16(c0, c1, c2, lut).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_d3_to_d3_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> Result<(f64, f64, f64)> {
+    let v = lut16::<3, 3>([c0, c1, c2], lut)?;
+    Ok((v[0], v[1], v[2]))
 }
 
 /// Evaluate a 3-input, 1-output legacy LUT; panics on malformed payloads.
+/// Compatibility wrapper for [`try_d3_to_d1_lut16`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
 pub fn d3_to_d1_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> f64 {
-    let v = lut16::<3, 1>([c0, c1, c2], lut);
-    v[0]
+    try_d3_to_d1_lut16(c0, c1, c2, lut).expect("Invalid legacy LUT conversion input")
+}
+
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_d3_to_d1_lut16(c0: u8, c1: u8, c2: u8, lut: &Mft2) -> Result<f64> {
+    let v = lut16::<3, 1>([c0, c1, c2], lut)?;
+    Ok(v[0])
+}
+
+pub(crate) fn check_lab(l: f64, a: f64, b: f64) -> Result<()> {
+    if [l, a, b].iter().all(|v| v.is_finite()) {
+        Ok(())
+    } else {
+        Err(Error::new(ErrorKind::InvalidInput, "Non-finite Lab input"))
+    }
+}
+
+pub(crate) fn check_whitepoint(wp: &super::WhitePoint) -> Result<()> {
+    if [wp.x, wp.y, wp.z].iter().all(|v| v.is_finite() && *v > 0.0) {
+        Ok(())
+    } else {
+        Err(Error::new(ErrorKind::InvalidInput, "Invalid white point"))
+    }
 }

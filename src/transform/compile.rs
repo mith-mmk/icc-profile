@@ -1,3 +1,4 @@
+use super::algorithm::AlgorithmProfile;
 use super::compile_budget::CompileBudget;
 use super::curve::inverse_curve_checked;
 use super::error::TransformError;
@@ -39,7 +40,7 @@ pub(super) struct CompiledDirection {
 /// An immutable, direction-specific transform stage.  Large curve and CLUT
 /// payloads are shared by clones and are not copied when a worker is created.
 #[derive(Clone, Debug)]
-pub struct CompiledProfile(pub(super) Arc<CompiledDirection>);
+pub struct CompiledProfile(pub(super) Arc<CompiledDirection>, AlgorithmProfile);
 
 impl Profile {
     pub fn compile(
@@ -53,6 +54,17 @@ impl Profile {
 }
 
 impl CompiledProfile {
+    /// Apply a numerical profile without copying immutable compiled tables.
+    /// The returned value and its clones use the chosen algorithms for every
+    /// evaluation, including atomic execution. Existing clones are unaffected.
+    pub fn with_algorithm_profile(mut self, profile: AlgorithmProfile) -> Self {
+        self.1 = profile;
+        self
+    }
+    pub fn algorithm_profile(&self) -> AlgorithmProfile {
+        self.1
+    }
+
     fn compile(
         profile: &Profile,
         direction: TransformDirection,
@@ -69,7 +81,7 @@ impl CompiledProfile {
             budget.rollback(checkpoint);
             return Err(error);
         }
-        Ok(Self(Arc::new(stage)))
+        Ok(Self(Arc::new(stage), AlgorithmProfile::default()))
     }
 
     pub fn direction(&self) -> TransformDirection {
@@ -155,7 +167,7 @@ impl CompiledProfile {
             TransformDirection::DeviceToPcs => {
                 if let Some(lut) = &self.0.lut {
                     let mut encoded = [0.0; 3];
-                    lut.eval_with_domain(input, &mut encoded, false)?;
+                    lut.eval_with_domain(input, &mut encoded, false, self.1.clut_3d())?;
                     decode_lut_pcs(&mut encoded, lut.pcs_encoding())?;
                     convert_pcs(&mut encoded, self.0.pcs, Pcs::Xyz)?;
                     output.copy_from_slice(&encoded);
@@ -172,7 +184,7 @@ impl CompiledProfile {
                     let mut encoded = [input[0], input[1], input[2]];
                     convert_pcs(&mut encoded, Pcs::Xyz, self.0.pcs)?;
                     encode_lut_pcs(&mut encoded, lut.pcs_encoding())?;
-                    lut.eval_with_domain(&encoded, output, false)?;
+                    lut.eval_with_domain(&encoded, output, false, self.1.clut_3d())?;
                 } else {
                     xyz_to_device(
                         self.0.matrix.as_ref().expect("matrix stage"),
@@ -286,9 +298,22 @@ pub struct Transform {
     output_raw_device_class: [u8; 4],
     reverse_pcs_connection: Option<ReversePcsConnection>,
     pub(super) options: TransformOptions,
+    algorithms: AlgorithmProfile,
 }
 
 impl Transform {
+    /// Apply a numerical profile to this transform, without rebuilding or
+    /// copying tables. Workers created afterwards inherit it. Existing clones
+    /// and workers remain unchanged; atomic and ordinary calls use the same
+    /// deterministic algorithms.
+    pub fn with_algorithm_profile(mut self, profile: AlgorithmProfile) -> Self {
+        self.algorithms = profile;
+        self
+    }
+    pub fn algorithm_profile(&self) -> AlgorithmProfile {
+        self.algorithms
+    }
+
     /// Parse both profiles with the supplied structural limits and compile a
     /// transform with the supplied decoded-owner limits as one checked
     /// operation.  Parsing and stage admission each happen before their
@@ -401,6 +426,7 @@ impl Transform {
             output_raw_device_class: output.raw_device_class(),
             reverse_pcs_connection,
             options,
+            algorithms: AlgorithmProfile::default(),
         })
     }
 
@@ -496,6 +522,7 @@ impl Transform {
                     src,
                     &mut pcs[..input_lut.output_channels],
                     self.options.clamp,
+                    self.algorithms.clut_3d(),
                 )?;
                 decode_lut_pcs(
                     &mut pcs[..input_lut.output_channels],
@@ -518,7 +545,12 @@ impl Transform {
                 if let Some(output_lut) = &self.lut_output {
                     let mut encoded = pcs;
                     encode_lut_pcs(&mut encoded[..3], output_lut.pcs_encoding())?;
-                    output_lut.eval_with_domain(&encoded[..3], dst, self.options.clamp)?;
+                    output_lut.eval_with_domain(
+                        &encoded[..3],
+                        dst,
+                        self.options.clamp,
+                        self.algorithms.clut_3d(),
+                    )?;
                 } else {
                     xyz_to_device(
                         self.output.as_ref().expect("matrix output path"),
@@ -552,7 +584,12 @@ impl Transform {
                 )?;
                 let mut encoded = pcs;
                 encode_lut_pcs(&mut encoded, output_lut.pcs_encoding())?;
-                output_lut.eval_with_domain(&encoded, dst, self.options.clamp)?;
+                output_lut.eval_with_domain(
+                    &encoded,
+                    dst,
+                    self.options.clamp,
+                    self.algorithms.clut_3d(),
+                )?;
                 if self.options.clamp {
                     for x in dst.iter_mut() {
                         *x = x.clamp(0.0, 1.0);

@@ -163,3 +163,28 @@ Existing 1D/3D interpolation is unchanged. CMYK mft2 matrices must be identity.
 Integer execution retains two 192-float buffers, using 48-pixel chunks for CMYK
 instead of 64. Borrowed f32 atomic output scratch remains 192 floats; device
 normalization/evaluator scratch grows to four components. Alpha is not added.
+
+## Explicit numerical algorithm profiles
+
+`TransformOptions` keeps its existing fields and struct-literal compatibility.
+Use `AlgorithmProfile` separately to select implemented numerical methods as a
+bundle, then apply it with `Transform::with_algorithm_profile` or
+`CompiledProfile::with_algorithm_profile`. These consuming methods do not copy
+compiled tables. Existing clones/workers remain unchanged; newly created
+workers inherit the selected profile. Ordinary, integer, Vec and atomic paths
+all use the same deterministic choices. Getters expose the effective profile.
+
+```rust
+use icc_profile::{AlgorithmProfile, ClutInterpolation3D, ClutInterpolation4D};
+let algorithms = AlgorithmProfile::default()
+    .with_clut_3d(ClutInterpolation3D::Trilinear)
+    .with_clut_4d(ClutInterpolation4D::Multilinear);
+// let transform = transform.with_algorithm_profile(algorithms);
+```
+
+Default is unchanged: 3D tetrahedral and 4D multilinear. 3D trilinear is the
+additional implemented option; 4D currently has only multilinear. Settings
+apply only to the matching CLUT dimensionality, not matrix or 1D paths. There
+are no placeholder CMS modes or accepted-but-unimplemented algorithms. Future
+presets can bundle additional validated choices without claiming exact CMS
+compatibility. Intent, clipping, BPC, and atomicity are independent contracts.

@@ -1,5 +1,6 @@
 //! Checked ICC parsing and color transformation facade.
 
+mod algorithm;
 mod compile;
 mod compile_budget;
 mod compile_plan;
@@ -37,3 +38,5 @@ pub use memory::TransformMemory;
 pub use profile::TransformOptions;
 pub use profile::{ColorSpace, Pcs, Profile, RenderingIntent, RouteInfo, RouteModel};
 pub use worker::TransformWorker;
+
+pub use algorithm::{AlgorithmProfile, ClutInterpolation3D, ClutInterpolation4D};

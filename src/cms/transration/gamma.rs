@@ -12,13 +12,17 @@ use std::io::{Error,ErrorKind};
 ///
 /// Returns an error for short input, missing coefficients, a zero divisor `a`
 /// in types 1 or 2, or a nonfinite evaluated result (including invalid real
-/// power domains and overflow). Types 3 and 4 do not divide by `a` and may use
+/// power domains and overflow), or an output reservation failure.
+/// Types 3 and 4 do not divide by `a` and may use
 /// zero `a` when the selected branch yields a finite result.
 pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:ParametricCurve) -> Result<Vec<u8>, Error>{
     if buf.len() < entry {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
     }
     // Empty batches historically accept even incomplete curves without evaluating them.
+    if entry == 0 {
+        return Ok(Vec::new());
+    }
     let required = match prametic_curve.funtion_type {
         0 => 1,
         1 => 3,
@@ -30,14 +34,16 @@ pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:Parametr
     if entry != 0 && prametic_curve.vals.len() < required {
         return Err(Error::new(ErrorKind::InvalidInput, "Parametric curve coefficients shortage"));
     }
-    let mut p = vec![];
-    for val in prametic_curve.vals {
-        p.push(val.as_f64())
+    // At most seven coefficients are used; ignore surplus data without allocating.
+    let mut p = [0.0; 7];
+    for (index, val) in prametic_curve.vals.iter().take(required).enumerate() {
+        p[index] = val.as_f64();
     }
     if entry != 0 && matches!(prametic_curve.funtion_type, 1 | 2) && p[1] == 0.0 {
         return Err(Error::new(ErrorKind::InvalidInput, "Parametric curve has zero divisor a"));
     }
-    let mut data = vec![];
+    let mut data = Vec::new();
+    data.try_reserve_exact(entry).map_err(Error::other)?;
  
     for i in 0..entry {
         let x = buf[i] as f64;

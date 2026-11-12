@@ -622,3 +622,48 @@ fn finite_out_of_range_lab_preserves_saturating_conversion() {
         );
     }
 }
+
+#[test]
+fn rgb_bridge_rejects_xyz_and_matrix_overflow_but_keeps_finite_clipping() {
+    let mut a = fixture8(4, 3);
+    let mut b = fixture16(4, 3, 2);
+    let enormous = WhitePoint::new(f64::MAX, f64::MAX, f64::MAX);
+    // Maximal chroma overflows the Lab-to-XYZ stage.
+    a.clut_values.fill(255);
+    b.clut_values.fill(65535);
+    invalid(|| try_cmyk_to_rgb_lut8(0, 0, 0, 0, &a, &enormous));
+    invalid(|| try_cmyk_to_rgb_lut16(0, 0, 0, 0, &b, &enormous));
+    // Neutral-ish Lab keeps XYZ finite, but the matrix's opposite signed
+    // products overflow and cancel to NaN. Check before the byte cast hides it.
+    for v in a.clut_values.chunks_exact_mut(3) {
+        v.copy_from_slice(&[255, 127, 127]);
+    }
+    for v in b.clut_values.chunks_exact_mut(3) {
+        v.copy_from_slice(&[65535, 32767, 32768]);
+    }
+    for (l, aa, bb) in [
+        cmyk_to_lab_lut8(0, 0, 0, 0, &a),
+        cmyk_to_lab_lut16(0, 0, 0, 0, &b),
+    ] {
+        let (x, y, z) = lab_to_xyz_wp(l, aa, bb, &enormous);
+        assert!([x, y, z].iter().all(|v| v.is_finite()));
+        let (r, g, b) = xyz_to_rgb_to_f64(x, y, z);
+        assert!([r, g, b].iter().any(|v| v.is_nan()));
+    }
+    invalid(|| try_cmyk_to_rgb_lut8(0, 0, 0, 0, &a, &enormous));
+    invalid(|| try_cmyk_to_rgb_lut16(0, 0, 0, 0, &b, &enormous));
+    for wp in [WhitePoint::d50(), WhitePoint::new(1e306, 1e306, 1e306)] {
+        let expected = |lab: (f64, f64, f64)| {
+            let (x, y, z) = lab_to_xyz_wp(lab.0, lab.1, lab.2, &wp);
+            xyz_to_rgb(x, y, z)
+        };
+        assert_eq!(
+            try_cmyk_to_rgb_lut8(0, 0, 0, 0, &a, &wp).unwrap(),
+            expected(cmyk_to_lab_lut8(0, 0, 0, 0, &a))
+        );
+        assert_eq!(
+            try_cmyk_to_rgb_lut16(0, 0, 0, 0, &b, &wp).unwrap(),
+            expected(cmyk_to_lab_lut16(0, 0, 0, 0, &b))
+        );
+    }
+}

@@ -25,8 +25,12 @@ CLUT, and output storage, and nine matrix coefficients for three-channel inputs.
 Trailing storage remains accepted for compatibility. Four-channel helpers do
 not use the matrix. Checked size arithmetic and batch allocation failures return
 `InvalidInput`. Float Lab must be finite; finite out-of-range Lab retains the
-legacy saturation/quantization behavior. White-point components must be finite
-and positive. Invalid input returns `InvalidInput`, never a substitute color.
+legacy saturation/quantization behavior, including extreme finite Lab whose
+byte scaling overflows before the saturating cast. White-point components must be finite
+and positive. RGB bridges also reject non-finite computed XYZ or matrix RGB
+values before casting to bytes; finite out-of-gamut RGB still clips normally.
+The old RGB wrappers explicitly panic for these rejected intermediate values.
+Invalid input returns `InvalidInput`, never a substitute color.
 
 All eight Lab/CMYK batch wrappers call the checked scalar path and reject short
 buffers and overflowing entry counts. Empty batches continue to succeed without

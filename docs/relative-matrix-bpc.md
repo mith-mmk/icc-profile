@@ -7,8 +7,9 @@ D50 headers; existing v2/v4 and class checks still apply. Destination forward
 relative routing must also select a matrix, so an authoritative A2B1/A2B0 LUT
 is never silently ignored. Invalid selected tags propagate errors.
 
-LUT/CMYK, Gray, absolute/perceptual/saturation BPC and other unproved routes
-remain unsupported. This is not the full CMYK black-estimation algorithm.
+This foundation does not itself cover LUT/CMYK, Gray or non-relative BPC.
+The later bounded [CMYK-input extension](cmyk-input-bpc.md) documents the
+additional accepted scope. This is not the full CMYK black-estimation algorithm.
 BPC-off behavior and its compiled-memory charges are unchanged.
 
 ## Algorithm and provenance
@@ -53,7 +54,7 @@ Current estimates depend only on matrix/TRC data, so the existing infallible
 with_algorithm_profile remains valid without re-estimation; clones/workers
 share the immutable stage. Future LUT BPC must account for interpolation when
 estimating black, rather than retaining stale values across algorithm changes.
-The current scope explicitly rejects such LUT routes.
+The CMYK-input extension precomputes both supported interpolation estimates.
 
 ## Black-box evidence
 

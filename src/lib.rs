@@ -43,7 +43,7 @@ pub(crate) mod allocation_probe;
 static TEST_ALLOCATOR: allocation_probe::Probe = allocation_probe::Probe;
 
 pub use transform::{
-    BpcBlackEstimate, BpcDiagnostics, BpcMethod,
+    BpcBlackEstimate, BpcDiagnostics, BpcMethod, CmykBpcDiagnostics,
     AlgorithmProfile, ClutInterpolation3D, ClutInterpolation4D,
     ColorSpace, CompiledProfile, ExecutionLimits, ExecutionLimitsBuilder, ParseLimits, Pcs,
     Profile, RenderingIntent, RouteInfo, RouteModel, Transform, TransformDirection, TransformError,

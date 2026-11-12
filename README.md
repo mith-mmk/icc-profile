@@ -208,7 +208,7 @@ A2B2 (saturation) for the supported v2 mft2 / v4 mAB display paths. Missing
 A2B1/A2B2 may use A2B0; RouteInfo reports this fallback. A malformed selected
 tag is never replaced by another tag. This executes profile-provided tables,
 not a newly invented gamut mapper or a guarantee of cross-CMS equivalence.
-CMYK output and limited matrix BPC are described below. Absolute CMYK display has the narrower scope below.
+CMYK output and limited matrix and CMYK-input BPC are described below. Absolute CMYK display has the narrower scope below.
 Existing non-relative matrix-route media-white requirements remain in force.
 See [intent validation](docs/cmyk-intents.md) for scope and black-box results.
 
@@ -230,8 +230,12 @@ CMYK output uses explicit printer B2A tags, without numerical A2B inversion:
 [v4 saturation LUT connection](docs/cmyk-output-saturation.md).
 Each stage documents its source/version/intent restrictions and rejected paths.
 
-The existing black_point_compensation option now supports only relative
+The existing black_point_compensation option supports relative
 RGB XYZ matrix-to-matrix routes with D50 headers and a verified matrix forward
 route for the destination. [BPC scope and diagnostics](docs/relative-matrix-bpc.md)
 describe endpoint estimates, memory budgets and black-box comparisons.
-LUT/CMYK BPC remains an explicit error; no full ISO conformance is claimed.
+An additional [CMYK-input BPC stage](docs/cmyk-input-bpc.md) accepts only v4
+printer CMYK with explicit A2B1 mAB and B2A0 mBA, to an RGB matrix destination.
+It validates black estimates for both interpolation choices and accounts for
+auxiliary compilation peak memory. CMYK-output, v2 CMYK, general LUT and
+non-relative BPC remain explicit errors; no full ISO conformance is claimed.

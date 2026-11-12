@@ -6,6 +6,12 @@ use crate::S15Fixed16Number;
 
 pub mod transration;
 
+/// Legacy color-buffer container.
+///
+/// The seven `to_*` methods are unimplemented placeholders and always return
+/// `None`, even when the stored representation matches the requested one.
+/// Use the explicit conversion functions in [`transration`] instead; they
+/// require callers to choose the whitepoint, encoding or profile as applicable.
 pub enum ColorEntries {
     Rgb24(Vec<u8>),
     Rgba32(Vec<u8>),
@@ -18,31 +24,38 @@ pub enum ColorEntries {
 }
 
 impl ColorEntries {
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_rgb(&self) -> Option<Vec<u8>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_lab(&self) -> Option<Vec<f64>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_lab24(&self) -> Option<Vec<u8>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_lab48(&self) -> Option<Vec<u16>> {
         None
     }
 
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_xyz(&self) -> Option<Vec<f64>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_xyz24(&self) -> Option<Vec<u8>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_ymck(&self) -> Option<Vec<f64>> {
         None
     }

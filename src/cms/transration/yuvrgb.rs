@@ -118,7 +118,7 @@ impl YUVToRGBCoefficient {
 /// * `y` - Luma (brightness) component [0-255]
 /// * `cb` - Chroma blue component [0-255]
 ///   - Value 128 represents neutral (no blue difference)
-///   - Values < 128: more blue, > 128: more yellow
+///   - Values < 128: more yellow, > 128: more blue
 /// * `cr` - Chroma red component [0-255]
 ///   - Value 128 represents neutral (no red difference)
 ///   - Values < 128: more cyan, > 128: more red
@@ -230,10 +230,9 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
 
 /// Convert YUV pixel buffer to RGBA (with alpha channel)
 ///
-/// Converts YUV pixels to RGBA format, preserving original Y value as alpha.
-/// Useful for video with alpha blending support.
+/// Converts YUV pixels to RGBA format with opaque alpha (255).
 /// Input format: [Y1, Cb1, Cr1, Y2, Cb2, Cr2, ...]
-/// Output format: [R1, G1, B1, A1, R2, G2, B2, A2, ...] where A=Y
+/// Output format: [R1, G1, B1, A1, R2, G2, B2, A2, ...] where A=255
 ///
 /// # Arguments
 ///
@@ -243,7 +242,7 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
 ///
 /// # Returns
 ///
-/// RGBA data where alpha channel equals the Y (luma) value
+/// RGBA data where alpha is always 255 (opaque)
 ///
 /// # Errors
 ///

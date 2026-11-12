@@ -5,7 +5,8 @@ three PCS channels to four device channels. Composite transforms require an
 RGB source. Standalone PcsToDevice accepts physical D50 XYZ, including for
 Lab-profile PCS. The selected B2A1 is executed; no A2B numerical inversion is used.
 
-This first stage supports relative colorimetric only. Missing B2A1, B2A0
+This first stage supports relative colorimetric only; the subsequent restricted
+absolute extension is documented in cmyk-output-absolute.md. Missing B2A1, B2A0
 fallback, other intents, Gray/CMYK composite sources, non-printer output,
 mft1, wrong-direction mAB and BPC remain errors. This is an implementation
 boundary, not a claim that ICC forbids those routes.

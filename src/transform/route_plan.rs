@@ -118,13 +118,15 @@ pub(super) fn plan_route_with_policy(
             let supported = (version == 2 && kind == Some(&b"mft2"[..]))
                 || (version == 4 && kind == Some(&b"mBA "[..]));
             if !supported
-                || intent != RenderingIntent::RelativeColorimetric
+                || !(intent == RenderingIntent::RelativeColorimetric
+                    || (intent == RenderingIntent::AbsoluteColorimetric
+                        && owner_policy == OwnerPolicy::TransformStage))
                 || profile.raw_device_class() != *b"prtr"
                 || selection.signature != Some(*b"B2A1")
                 || selection.used_fallback
             {
                 return Err(TransformError::UnsupportedProfileFeature(
-                    "CMYK output requires an explicit relative printer B2A1 using v2 mft2 or v4 mBA",
+                    "CMYK output requires explicit printer B2A1 using v2 mft2 or v4 mBA; absolute is composite-only",
                 ));
             }
         }

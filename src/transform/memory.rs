@@ -131,6 +131,11 @@ impl Transform {
                 .checked_add(lut_memory(lut)?)
                 .ok_or(TransformError::ResourceLimit("transform memory accounting"))?;
         }
+        if self.bpc.is_some() {
+            total = total
+                .checked_add(size_of::<super::bpc::BpcStage>())
+                .ok_or(TransformError::ResourceLimit("BPC memory accounting"))?;
+        }
         let profile_bytes = if Arc::ptr_eq(&self.input_profile.0, &self.output_profile.0) {
             profile_memory(&self.input_profile.0)?
         } else {

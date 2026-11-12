@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main, "0.1.0"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable]
+        include:
+          - os: ubuntu-latest
+            rust: "1.91.0"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Rust
+        run: rustup toolchain install ${{ matrix.rust }} --profile minimal
+      - name: Unit and synthetic integration tests
+        run: cargo +${{ matrix.rust }} test --all-targets
+      - name: Documentation tests
+        run: cargo +${{ matrix.rust }} test --doc
+      - name: Check reader example
+        run: cargo +${{ matrix.rust }} check --manifest-path examples/Cargo.toml

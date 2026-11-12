@@ -51,6 +51,7 @@ fn cmyk_no_overflow_values() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_white_to_rgb() {
     let decoded = load_decoded("JapanColor2011Coated.icc");
     // C=0,M=0,Y=0,K=0 → 紙白 (高輝度 RGB)
@@ -63,6 +64,7 @@ fn japan_color_white_to_rgb() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_heavy_ink_darkens_rgb() {
     let decoded = load_decoded("JapanColor2011Coated.icc");
     // 大量インク → 暗い方向 (LUT 端点バグを避けるため 253 を使用)
@@ -75,6 +77,7 @@ fn japan_color_heavy_ink_darkens_rgb() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_yellow_ink_has_low_blue() {
     let decoded = load_decoded("JapanColor2011Coated.icc");
     // Y(Yellow)=200, C=M=K=0 → 青が少ない黄色系
@@ -87,6 +90,7 @@ fn japan_color_yellow_ink_has_low_blue() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_a2b0_type_check() {
     // A2B0 が何らかの LUT 型であることを確認 (Lut8 or Lut16 or LutAtoB)
     let decoded = load_decoded("JapanColor2011Coated.icc");
@@ -99,6 +103,7 @@ fn japan_color_a2b0_type_check() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_cmyk_to_lab_via_lut8_white() {
     let decoded = load_decoded("JapanColor2011Coated.icc");
     let tag = decoded.tags.get("A2B0").expect("A2B0 must exist");
@@ -111,6 +116,7 @@ fn japan_color_cmyk_to_lab_via_lut8_white() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_cmyk_to_lab_via_lut8_heavy_ink() {
     let decoded = load_decoded("JapanColor2011Coated.icc");
     let tag = decoded.tags.get("A2B0").expect("A2B0 must exist");
@@ -127,6 +133,7 @@ fn japan_color_cmyk_to_lab_via_lut8_heavy_ink() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_a2b0_type_detection() {
     // ycck.icc の A2B0 タグが Lut16 か Lut8 か確認
     let decoded = load_decoded("ycck.icc");
@@ -138,6 +145,7 @@ fn ycck_a2b0_type_detection() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_cmyk_to_lab_via_lut16_white() {
     let decoded = load_decoded("ycck.icc");
     let tag = decoded.tags.get("A2B0").expect("A2B0 must exist");
@@ -152,6 +160,7 @@ fn ycck_cmyk_to_lab_via_lut16_white() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_cmyk_to_lab_via_lut16_dark_ink() {
     let decoded = load_decoded("ycck.icc");
     let tag = decoded.tags.get("A2B0").expect("A2B0 must exist");
@@ -169,6 +178,7 @@ fn ycck_cmyk_to_lab_via_lut16_dark_ink() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_cmyk_pipeline_white() {
     use icc_profile::cms::transration::cmyk_to_lab_lut8;
     let decoded = load_decoded("JapanColor2011Coated.icc");
@@ -189,12 +199,14 @@ fn japan_color_cmyk_pipeline_white() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_profile_has_a2b0() {
     let decoded = load_decoded("ycck.icc");
     assert!(decoded.tags.contains_key("A2B0"), "ycck must have A2B0");
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_white_to_rgb() {
     let decoded = load_decoded("ycck.icc");
     let (r, g, b) = cmyk_to_rgb_from_profile(0, 0, 0, 0, &decoded);
@@ -208,6 +220,7 @@ fn ycck_white_to_rgb() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_a2b0_is_lut_type() {
     use icc_profile::iccprofile::Data;
     let decoded = load_decoded("sRGB_v4_ICC_preference.icc");
@@ -217,6 +230,7 @@ fn srgb_v4_a2b0_is_lut_type() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn srgb_v4_b2a0_is_lut_type() {
     use icc_profile::iccprofile::Data;
     let decoded = load_decoded("sRGB_v4_ICC_preference.icc");
@@ -230,6 +244,7 @@ fn srgb_v4_b2a0_is_lut_type() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_rxyz_tag_exists_and_reasonable() {
     let decoded = load_decoded("asus_rog_strix_xg309cm.icm");
     let tag = decoded.tags.get("rXYZ").expect("rXYZ must exist");
@@ -248,6 +263,7 @@ fn asus_rxyz_tag_exists_and_reasonable() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_gxyz_tag_green_dominant() {
     let decoded = load_decoded("asus_rog_strix_xg309cm.icm");
     let tag = decoded.tags.get("gXYZ").expect("gXYZ must exist");
@@ -264,6 +280,7 @@ fn asus_gxyz_tag_green_dominant() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn asus_bxyz_tag_blue_high_z() {
     let decoded = load_decoded("asus_rog_strix_xg309cm.icm");
     let tag = decoded.tags.get("bXYZ").expect("bXYZ must exist");
@@ -289,6 +306,7 @@ fn asus_bxyz_tag_blue_high_z() {
 // ===========================================================================
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_cmyk_to_lab_range_validation() {
     // CMYK→Lab 変換で Lab 値が有効範囲内か確認
     let decoded = load_decoded("JapanColor2011Coated.icc");
@@ -304,6 +322,7 @@ fn japan_color_cmyk_to_lab_range_validation() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn ycck_cmyk_to_lab_range_validation() {
     // CMYK→Lab (Lut16) 変換で Lab 値が有効範囲内か確認
     let decoded = load_decoded("ycck.icc");
@@ -318,6 +337,7 @@ fn ycck_cmyk_to_lab_range_validation() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_color_white_delta_e_check() {
     // White point CMYK(0,0,0,0) の Lab値 × 2 → ΔE がほぼ0か確認
     let decoded = load_decoded("JapanColor2011Coated.icc");
@@ -331,6 +351,7 @@ fn japan_color_white_delta_e_check() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn japan_vs_ycck_cmyk_neutral_de76_comparison() {
     // 同じ CMYK ニュートラル値を両プロファイルで変換 → Lab が近いか確認
     let jp = load_decoded("JapanColor2011Coated.icc");
@@ -354,6 +375,7 @@ fn japan_vs_ycck_cmyk_neutral_de76_comparison() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn cmyk_pipeline_white_to_rgb_brightness() {
     // White CMYK → Lab → XYZ → RGB パイプライン、RGB値が高輝度か確認
     let decoded = load_decoded("JapanColor2011Coated.icc");
@@ -370,6 +392,7 @@ fn cmyk_pipeline_white_to_rgb_brightness() {
 }
 
 #[test]
+#[ignore = "requires separately licensed files in _test_samples; run explicitly with --ignored"]
 fn cmyk_pipeline_dark_to_rgb_darkness() {
     // Heavy ink CMYK → Lab → XYZ → RGB パイプライン、RGB値が低輝度か確認
     let decoded = load_decoded("JapanColor2011Coated.icc");

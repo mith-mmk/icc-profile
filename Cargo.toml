@@ -2,6 +2,7 @@
 name = "icc-profile"
 version = "0.0.8"
 edition = "2021"
+rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 description = "Pure Rust ICC profile reader and Gray/RGB color transform engine"
 readme = "README.md"

@@ -34,6 +34,7 @@ fn main() {
                     if bpc {
                         println!("icc matrix BPC diagnostics={:?}", t.bpc_diagnostics());
                         println!("icc CMYK BPC diagnostics={:?}", t.cmyk_bpc_diagnostics());
+                        println!("icc CMYK output BPC diagnostics={:?}", t.cmyk_output_bpc_diagnostics());
                         println!("icc memory={:?}", t.memory_usage());
                     }
                     match t.transform_u16_atomic(&input, &mut output) {

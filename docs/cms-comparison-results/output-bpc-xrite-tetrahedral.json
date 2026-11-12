@@ -1,0 +1,56 @@
+{
+  "source": "sRGB2014.icc",
+  "source_sha256": "384b832de3412066743b52a75ee906b6fb9fb8d9e09e936fc2c43223815c6e0a",
+  "destination": "CGATS21_CRPC6.icc",
+  "destination_sha256": "4ea462ebcc80e2376ebf4a72bd118d1ba92c638edcd718e3c051c3a185586063",
+  "lcms_version": 2190,
+  "lcms_binary_sha256": "9d97fbd455063b3d06d07d93ab84aab62c38746329574f75984b25b7b125a7c2",
+  "moxcms_version": "0.9.2",
+  "icc_3d_interpolation": "tetrahedral",
+  "mox_requested_3d_interpolation": "tetrahedral",
+  "lcms_interpolation": "engine-selected",
+  "intent": "relative_colorimetric",
+  "black_point_compensation": "on",
+  "lcms_flags": "0x2140 NOOPTIMIZE|NOCACHE|BLACKPOINTCOMPENSATION",
+  "pixels": 4913,
+  "input_channels": 3,
+  "output_channels": 4,
+  "tolerance_codes": 1024,
+  "note": "screening tolerance, not a DeltaE accuracy guarantee",
+  "status": "icc parse=ok\nicc matrix BPC diagnostics=None\nicc CMYK BPC diagnostics=None\nicc CMYK output BPC diagnostics=Some(CmykOutputBpcDiagnostics { initial_device_black: [0.8452425, 0.75141376, 0.6031686, 1.0], initial_lstar: 10.797542938188972, destination_lstar: 10.797542938188972, source: BpcBlackEstimate { endpoint: [0.0, 0.0, 0.0], endpoint_xyz: [0.0, 0.0, 0.0], raw_lstar: 0.0, capped_lstar: 0.0, effective_y: 0.0 }, method: MidrangeStraight, shadow_points: 0, scale: 0.9876714795827866, offset: [0.011887159386277197, 0.01232852041721344, 0.010169796492159365], interpolation: Tetrahedral })\nicc memory=Ok(TransformMemory { profile_bytes: 3466524, compiled_bytes: 653784, resident_bytes: 4120308, build_peak_bytes: 5848016 })\nicc transform=ok\nmox skipped=BPC option unavailable in this public-API harness; no disabled-BPC comparison\npixels=4913\n",
+  "comparison": {
+    "icc": {
+      "max_per_channel_codes": [
+        2859,
+        2312,
+        2262,
+        2111
+      ],
+      "worst_input_codes": [
+        8192,
+        4096,
+        24576
+      ],
+      "worst_actual_codes": [
+        62424,
+        63719,
+        0,
+        23892
+      ],
+      "worst_reference_codes": [
+        65283,
+        65535,
+        0,
+        23538
+      ],
+      "max_abs_codes": 2859,
+      "mean_abs_codes": 54.35589253002239,
+      "max_normalized": 0.04362554360265507,
+      "mean_normalized": 0.0008294177543300891,
+      "pixels_over_tolerance": 48,
+      "exact_match_pixels": 1,
+      "pixels_over_32_codes": 3554,
+      "pixels_over_256_codes": 610
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "lcms_version": 2190,
+  "lcms_binary_sha256": "9d97fbd455063b3d06d07d93ab84aab62c38746329574f75984b25b7b125a7c2",
+  "api": "cmsDetectDestinationBlackPoint",
+  "intent": 1,
+  "flags": 0,
+  "profiles": [
+    {
+      "file": "CGATS21_CRPC6.icc",
+      "sha256": "4ea462ebcc80e2376ebf4a72bd118d1ba92c638edcd718e3c051c3a185586063",
+      "ok": 1,
+      "xyz": [
+        0.011899002061900628,
+        0.012340802802220108,
+        0.010179928231551366
+      ]
+    },
+    {
+      "file": "PSOcoated_v3.icc",
+      "sha256": "c30ad2c01e8f93135ec7682c535e0a81bc2d177c301e196376c5f5838b5c8e86",
+      "ok": 1,
+      "xyz": [
+        0.017548591313661013,
+        0.018200156931820175,
+        0.015013309453058461
+      ]
+    },
+    {
+      "file": "sRGB2014.icc",
+      "sha256": "384b832de3412066743b52a75ee906b6fb9fb8d9e09e936fc2c43223815c6e0a",
+      "ok": 1,
+      "xyz": [
+        1.8746004107296338e-09,
+        0.0,
+        -4.00943237168093e-09
+      ]
+    }
+  ]
+}

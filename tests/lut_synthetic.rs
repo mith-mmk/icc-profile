@@ -1909,3 +1909,84 @@ fn cmyk_v4_mab_limits_missing_fourth_curve_and_reverse_rejection() {
     let mut bad=bytes;u32_at(&mut bad,144+28,0);
     assert!(Profile::parse(&bad).unwrap().compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()).is_err());
 }
+
+fn cross_product_mft2() -> Vec<u8> {
+    let mut tag=identity_mft2();let mut at=52+12;
+    for x in 0..2u16 {for y in 0..2u16 {for z in 0..2u16 {
+        for v in [x*y,y*z,z*x] {tag[at..at+2].copy_from_slice(&(v*65535).to_be_bytes());at+=2;}
+    }}}
+    tag
+}
+
+#[test]
+fn algorithm_profile_selects_analytic_3d_interpolation_without_changing_default() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D};
+    let p=Profile::parse(&profile(*b"RGB ",vec![(*b"A2B1",cross_product_mft2())])).unwrap();
+    let standard=p.compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()).unwrap();
+    let custom=AlgorithmProfile::default().with_clut_3d(ClutInterpolation3D::Trilinear);
+    let linear=standard.clone().with_algorithm_profile(custom);
+    assert_eq!(standard.algorithm_profile(),AlgorithmProfile::default());assert_eq!(linear.algorithm_profile(),custom);
+    for input in [[0.2,0.4,0.8],[0.8,0.1,0.3],[0.3,0.8,0.1],[0.0,0.0,0.0],[1.0,1.0,1.0]] {
+        let [x,y,z]=input;let mut tetra=[0.0;3];let mut tri=[0.0;3];
+        standard.transform_f32_atomic(&input,&mut tetra).unwrap();linear.transform_f32_atomic(&input,&mut tri).unwrap();
+        for (a,e) in tetra.iter().zip([x.min(y),y.min(z),z.min(x)]) {assert!((a-e*65535.0/32768.0).abs()<1e-6);}
+        for (a,e) in tri.iter().zip([x*y,y*z,z*x]) {assert!((a-e*65535.0/32768.0).abs()<1e-6);}
+    }
+}
+
+#[test]
+fn algorithm_profile_applies_to_source_destination_workers_and_atomic() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D};
+    for (source_tag,destination_tag) in [(cross_product_mft2(),identity_mft2()),(identity_mft2(),cross_product_mft2())] {
+        let source=Profile::parse(&profile(*b"RGB ",vec![(*b"A2B1",source_tag)])).unwrap();
+        let destination=Profile::parse(&profile(*b"RGB ",vec![(*b"B2A1",destination_tag)])).unwrap();
+        // All existing public fields, no update syntax: source compatibility.
+        let options=TransformOptions { rendering_intent:RenderingIntent::RelativeColorimetric,black_point_compensation:false,clamp:true };
+        let standard=Transform::new(&source,&destination,options).unwrap();
+        let mut old_worker=standard.worker();
+        let custom=AlgorithmProfile::default().with_clut_3d(ClutInterpolation3D::Trilinear);
+        let linear=standard.clone().with_algorithm_profile(custom);
+        assert_eq!(linear.algorithm_profile(),custom);
+        let mut tetra=[0.0;3];let mut tri=[0.0;3];
+        standard.transform_f32(&[0.2,0.4,0.8],&mut tetra).unwrap();linear.transform_f32(&[0.2,0.4,0.8],&mut tri).unwrap();
+        assert_ne!(tetra,tri);
+        let mut before=[0.0;3];old_worker.transform_f32(&[0.2,0.4,0.8],&mut before).unwrap();assert_eq!(before,tetra);
+        atomic_contract::check_atomic_contract(&linear);
+    }
+}
+
+#[test]
+fn algorithm_profile_preserves_cmyk_4d_and_strict_saturated_3d() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D,ClutInterpolation4D};
+    let algorithms=AlgorithmProfile::default().with_clut_3d(ClutInterpolation3D::Trilinear).with_clut_4d(ClutInterpolation4D::Multilinear);
+    assert_eq!(algorithms.clut_4d(),ClutInterpolation4D::Multilinear);
+    let p=Profile::parse(&cmyk_mab_profile()).unwrap();
+    let original=p.compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()).unwrap();
+    let custom=original.clone().with_algorithm_profile(algorithms);
+    let mut a=[0.0;3];let mut b=[0.0;3];original.transform_f32(&[0.2,0.4,0.6,0.8],&mut a).unwrap();custom.transform_f32(&[0.2,0.4,0.6,0.8],&mut b).unwrap();assert_eq!(a,b);
+    let mut tag=identity_mft2();tag[64..112].fill(255);
+    let p=Profile::parse(&profile(*b"RGB ",vec![(*b"A2B1",tag)])).unwrap();
+    let stage=p.compile(TransformDirection::DeviceToPcs,RenderingIntent::RelativeColorimetric,TransformLimits::default()).unwrap().with_algorithm_profile(algorithms);
+    for i in 0..200 {stage.transform_f32_atomic(&[(i%97) as f32/97.0,(i%89) as f32/89.0,(i%83) as f32/83.0],&mut b).unwrap();assert!(b.iter().all(|v|(*v-65535.0/32768.0).abs()<2e-6));}
+}
+
+#[test]
+fn algorithm_profile_reaches_mab_mba_standalone_and_matrix_destination() {
+    use icc_profile::{AlgorithmProfile,ClutInterpolation3D};
+    let algorithms=AlgorithmProfile::default().with_clut_3d(ClutInterpolation3D::Trilinear);
+    for (kind,signature,direction) in [(*b"mAB ",*b"A2B1",TransformDirection::DeviceToPcs),(*b"mBA ",*b"B2A1",TransformDirection::PcsToDevice)] {
+        let mut tag=mab_b2a_identity();tag[..4].copy_from_slice(&kind);let mut at=88;
+        for x in 0..2u16 {for y in 0..2u16 {for z in 0..2u16 {for v in [x*y,y*z,z*x] {tag[at..at+2].copy_from_slice(&(v*65535).to_be_bytes());at+=2;}}}}
+        let p=Profile::parse(&profile(*b"RGB ",vec![(signature,tag)])).unwrap();
+        let default=p.compile(direction,RenderingIntent::RelativeColorimetric,TransformLimits::default()).unwrap();
+        let linear=default.clone().with_algorithm_profile(algorithms);let mut a=[0.0;3];let mut b=[0.0;3];
+        default.transform_f32(&[0.2,0.4,0.8],&mut a).unwrap();linear.transform_f32(&[0.2,0.4,0.8],&mut b).unwrap();assert_ne!(a,b);
+        if direction==TransformDirection::PcsToDevice {
+            let src=Profile::parse(&d50_matrix_rgb_profile()).unwrap();
+            let standard=Transform::new(&src,&p,TransformOptions::default()).unwrap();
+            let linear=standard.clone().with_algorithm_profile(algorithms);
+            standard.transform_f32(&[0.2,0.4,0.8],&mut a).unwrap();linear.transform_f32(&[0.2,0.4,0.8],&mut b).unwrap();assert_ne!(a,b);
+            atomic_contract::check_atomic_contract(&linear);
+        }
+    }
+}

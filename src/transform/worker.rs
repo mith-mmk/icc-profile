@@ -9,6 +9,11 @@ pub struct TransformWorker {
 }
 
 impl TransformWorker {
+    /// Numerical choices inherited when this worker was created.
+    pub fn algorithm_profile(&self) -> super::algorithm::AlgorithmProfile {
+        self.transform.algorithm_profile()
+    }
+
     /// One-pass execution; a late error may leave output partially updated.
     /// Use `transform_f32_atomic` for unchanged output on every error.
     pub fn transform_f32(

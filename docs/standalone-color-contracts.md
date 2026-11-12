@@ -16,6 +16,11 @@ for checked `Profile`/`Transform` processing or a claim of ICC-conformant result
   implement ICC v2 or v4 Lab PCS encoding.
 - **Whitepoint:** `WhitePoint::from_profile` reads the header illuminant, not
   `wtpt`. Supplying a whitepoint does not itself perform chromatic adaptation.
+- **Bare CMYK helper:** `cmyk_to_rgb(y, m, c, k)` takes legacy **Y/M/C/K**
+  arguments and uses inverted/additive byte components, not standard ink CMYK:
+  RGB is `clamp(c + k - 255, m + k - 255, y + k - 255)`. All zero maps to
+  black; all 255 maps to white. No profile is required. Do not pass conventional
+  C/M/Y/K ink values without an explicit caller-side interpretation.
 - **RGBA to YCbCr:** `rgba_to_yuv_entries` reads RGBA quads, discards alpha and
   returns Y/Cb/Cr triplets. The old reversed name
   `yuv_to_rgba_entries_from_rgb` remains a compatibility alias with identical

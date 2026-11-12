@@ -69,3 +69,13 @@ fn color_entries_methods_remain_explicitly_unimplemented() {
     assert!(entry.to_xyz24().is_none());
     assert!(entry.to_ymck().is_none());
 }
+
+#[test]
+fn bare_cmyk_preserves_inverted_additive_ymck_convention() {
+    use icc_profile::cms::transration::cmykrgb::cmyk_to_rgb;
+    assert_eq!(cmyk_to_rgb(0, 0, 0, 0), (0, 0, 0));
+    assert_eq!(cmyk_to_rgb(255, 255, 255, 255), (255, 255, 255));
+    assert_eq!(cmyk_to_rgb(0, 0, 255, 255), (255, 0, 0));
+    assert_eq!(cmyk_to_rgb(255, 0, 0, 255), (0, 0, 255));
+    assert_eq!(cmyk_to_rgb(200, 100, 0, 0), (0, 0, 0));
+}

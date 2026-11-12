@@ -1,5 +1,6 @@
 //! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
 //! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Output reservation failures are returned as errors.
 //! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
 //!
 use std::io::Result;
@@ -57,7 +58,8 @@ pub fn xyz_to_rgb(x:f64,y:f64,z:f64) -> (u8,u8,u8) {
 pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) -> Result<Vec<u8>> {
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -80,7 +82,8 @@ pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) 
 pub fn xyz_to_rgba_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) -> Result<Vec<u8>> {
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 4, 4)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 4;

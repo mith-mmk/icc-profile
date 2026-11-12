@@ -1,5 +1,6 @@
 //! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
 //! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Output reservation failures are returned as errors.
 //! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
 //!
 use std::io::Result;
@@ -54,7 +55,8 @@ pub fn rgb_to_xyz_from_f64(r:f64,g:f64,b:f64) -> (f64,f64,f64) {
 pub fn rgb_to_xyz_entries_f64 (buf:&[u8],entries: usize,mode: &RGBToXYZCoefficient) -> Result<Vec<f64>> {
     let output_len = checked_batch_len::<f64>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -75,7 +77,8 @@ pub fn rgb_to_xyz_entries_f64 (buf:&[u8],entries: usize,mode: &RGBToXYZCoefficie
 pub fn rgba_to_xyz_entries_f64 (buf:&[u8],entries: usize,mode: &RGBToXYZCoefficient) -> Result<Vec<f64>> {
     let output_len = checked_batch_len::<f64>(buf.len(), entries, 4, 3)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 4;
@@ -97,7 +100,8 @@ pub fn rgba_to_xyz_entries_f64 (buf:&[u8],entries: usize,mode: &RGBToXYZCoeffici
 pub fn rgb_to_xyz_entries(buf:&[u8],entries: usize,mode: &RGBToXYZCoefficient) -> Result<Vec<u8>> {
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -119,7 +123,8 @@ pub fn rgb_to_xyz_entries(buf:&[u8],entries: usize,mode: &RGBToXYZCoefficient) -
 pub fn rgba_to_xyz_entries (buf:&[u8],entries: usize,mode: &RGBToXYZCoefficient) -> Result<Vec<u8>> {
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 4, 3)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 4;

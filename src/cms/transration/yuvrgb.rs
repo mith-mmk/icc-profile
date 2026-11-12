@@ -1,5 +1,6 @@
 //! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
 //! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Output reservation failures are returned as errors.
 //! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
 //!
 //! YUV (YCbCr) to RGB color space conversion
@@ -205,7 +206,8 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
 
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -249,7 +251,8 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
 pub fn yuv_to_rgba_entries_from_yuv(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient) -> Result<Vec<u8>> {
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 4)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(output_len);
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;

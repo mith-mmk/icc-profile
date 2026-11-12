@@ -1019,9 +1019,10 @@ impl Data {
                 bound_check(data, ptr, count)?;
                 let ascii_string = read_ascii_string(data, ptr, count);
                 ptr += count;
-                // Preserve the legacy ASCII return for ICC v2/v4 inspection, but
-                // honor the declared ASCII count instead of reading the tag tail.
-                if version < 0x40000000 {
+                // Historical ASCII-only tags remain inspectable. If a legacy
+                // Unicode/ScriptCode tail is present, validate all of it even
+                // when this API returns only the ASCII field.
+                if ptr == data.len() && version < 0x40000000 {
                     return Ok(ASCII(ascii_string));
                 }
                 bound_check(data, ptr, 8)?;
@@ -1031,6 +1032,10 @@ impl Data {
                 Self::records(data, ptr, count, 2)?;
                 let vals: Vec<u16> = (0..count).map(|i| read_u16_be(data, ptr + i * 2)).collect();
                 let local_string = String::from_utf16(&vals).map_err(|_| Error::other("Invalid desc UTF-16"))?;
+                ptr += count * 2;
+                bound_check(data, ptr, 70)?;
+                if data[ptr + 2] > 67 { return Err(Error::other("Invalid ScriptCode count")); }
+                if version < 0x40000000 { return Ok(ASCII(ascii_string)); }
                 Ok(Descriptor(Descriptor { ascii_string, lang, local_string }))
             },
             "chrm" => {
@@ -1371,7 +1376,7 @@ impl Data {
             },
             "crdi" => {
                 let mut strings = vec![];
-                while ptr < length {
+                for _ in 0..5 {
                     bound_check(data, ptr, 4)?;
                     let strlen = read_u32_be(data, ptr) as usize;
                     ptr += 4;

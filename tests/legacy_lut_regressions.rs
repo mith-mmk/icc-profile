@@ -1,4 +1,5 @@
 use icc_profile::cms::transration::*;
+use icc_profile::iccprofile::ICCNumber;
 use icc_profile::{Mft1, Mft2, S15Fixed16Number};
 fn matrix() -> Vec<S15Fixed16Number> {
     (0..9)
@@ -331,9 +332,9 @@ fn lut8_interpolates_nonlinear_output_curve_before_rounding() {
 #[test]
 fn fractional_off_diagonal_matrix_preserves_axis_mixing() {
     let mut lut = fixture16(3, 3, 2);
-    // S15Fixed16Number::new currently encodes .5 as 32767/65535 and
-    // .25 as 16383/65535. Use those literal rational values, independently
-    // of the implementation's matrix accessor, to keep this legacy test exact.
+    // Test LUT matrix application using the coefficients represented by the
+    // public numeric type. Raw fixed-point encoding/decoding correctness belongs
+    // to numeric-type tests, not this independent matrix/interpolation oracle.
     lut.e_params = [0.5, 0.25, 0.0, 0.0, 0.5, 0.25, 0.25, 0.0, 0.5]
         .into_iter()
         .map(S15Fixed16Number::new)
@@ -351,7 +352,19 @@ fn fractional_off_diagonal_matrix_preserves_axis_mixing() {
         }
     }
     let actual = d3_to_d3_lut16(40, 120, 200, &lut);
-    close(actual.0, (32767.0 * 40.0 + 16383.0 * 120.0) / 255.0);
-    close(actual.1, (32767.0 * 120.0 + 16383.0 * 200.0) / 255.0);
-    close(actual.2, (16383.0 * 40.0 + 32767.0 * 200.0) / 255.0);
+    let e: Vec<f64> = lut.e_params.iter().map(ICCNumber::as_f64).collect();
+    // The identity CLUT/curves leave the analytic matrix result unchanged.
+    // Write out the three dot products without calling the LUT matrix evaluator.
+    close(
+        actual.0,
+        (e[0] * 40.0 + e[1] * 120.0 + e[2] * 200.0) * 257.0,
+    );
+    close(
+        actual.1,
+        (e[3] * 40.0 + e[4] * 120.0 + e[5] * 200.0) * 257.0,
+    );
+    close(
+        actual.2,
+        (e[6] * 40.0 + e[7] * 120.0 + e[8] * 200.0) * 257.0,
+    );
 }

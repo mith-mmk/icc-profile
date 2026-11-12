@@ -1,0 +1,37 @@
+{
+  "source": "lab-pcs-rgb.icc",
+  "source_sha256": "1b7dea170895aacd22a8c76344b06c54ccf18882a573698bb8e8a07f6cfec2b4",
+  "destination": "sRGB2014.icc",
+  "destination_sha256": "384b832de3412066743b52a75ee906b6fb9fb8d9e09e936fc2c43223815c6e0a",
+  "lcms_version": 2190,
+  "lcms_binary_sha256": "9d97fbd455063b3d06d07d93ab84aab62c38746329574f75984b25b7b125a7c2",
+  "moxcms_version": "0.9.2",
+  "intent": "relative_colorimetric",
+  "lcms_flags": "NOOPTIMIZE|NOCACHE (0x0140)",
+  "pixels": 4913,
+  "tolerance_codes": 1024,
+  "note": "screening tolerance, not a DeltaE accuracy guarantee",
+  "status": "icc parse=ok\nicc transform=ok\nmox parse=ok\nmox options=TransformOptions { rendering_intent: RelativeColorimetric, allow_use_cicp_transfer: false, prefer_fixed_point: false, interpolation_method: Tetrahedral, barycentric_weight_scale: Low }\nmox transform=ok\npixels=4913\n",
+  "comparison": {
+    "icc": {
+      "max_abs_codes": 8,
+      "mean_abs_codes": 0.7134133930388764,
+      "max_normalized": 0.00012207217517357137,
+      "mean_normalized": 1.0885990585776705e-05,
+      "pixels_over_tolerance": 0,
+      "exact_match_pixels": 673,
+      "pixels_over_32_codes": 0,
+      "pixels_over_256_codes": 0
+    },
+    "mox": {
+      "max_abs_codes": 140,
+      "mean_abs_codes": 62.1500780242893,
+      "max_normalized": 0.0021362630655374993,
+      "mean_normalized": 0.0009483494014540215,
+      "pixels_over_tolerance": 0,
+      "exact_match_pixels": 0,
+      "pixels_over_32_codes": 4817,
+      "pixels_over_256_codes": 0
+    }
+  }
+}

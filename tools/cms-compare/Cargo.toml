@@ -1,0 +1,11 @@
+[package]
+name = "icc-cms-compare"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+icc-profile = { path = "../.." }
+moxcms = { version = "=0.9.2", features = ["options"] }

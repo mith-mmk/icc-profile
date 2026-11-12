@@ -8,12 +8,27 @@ use std::io::{Error,ErrorKind};
 use std::io::prelude::*;
 
 pub(crate) fn bound_check(buf:&[u8],ptr:usize,size:usize) -> Result<()> {
-    if buf.len() < ptr + size {
-        let string = format!("Outbound check error len {} but index {}",buf.len(),ptr+size);
-        return Err(Error::new(ErrorKind::Other,string))
+    if ptr > buf.len() || size > buf.len() - ptr {
+        return Err(Error::other(format!(
+            "Outbound check error len {} but offset {} and size {}", buf.len(), ptr, size
+        )));
     }
-
     Ok(())
+}
+
+// Validate both input indexing and the output Vec's byte capacity before allocation.
+pub(crate) fn checked_batch_len<T>(input_len: usize, entries: usize, input_channels: usize, output_channels: usize) -> Result<usize> {
+    let invalid_size = || Error::new(ErrorKind::InvalidInput, "Batch size overflow");
+    let input = entries.checked_mul(input_channels).ok_or_else(invalid_size)?;
+    let output = entries.checked_mul(output_channels).ok_or_else(invalid_size)?;
+    let bytes = output.checked_mul(std::mem::size_of::<T>()).ok_or_else(invalid_size)?;
+    if bytes > isize::MAX as usize {
+        return Err(invalid_size());
+    }
+    if input_len < input {
+        return Err(Error::other("Data shotage"));
+    }
+    Ok(output)
 }
 
 pub fn dump(filename:String,buf:&mut [u8]) -> Result<()>  {
@@ -123,3 +138,27 @@ pub fn decoded_print(header :&DecodedICCProfile,verbose:usize) -> Result<String>
 }
 
 pub use crate::color_diff::{ciede2000, delta_e76};
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::{bound_check, checked_batch_len};
+
+    #[test]
+    fn invalid_ranges_never_overflow() {
+        for (offset, size) in [(usize::MAX, 1), (1, usize::MAX), (usize::MAX, usize::MAX)] {
+            assert!(std::panic::catch_unwind(|| bound_check(&[0], offset, size)).unwrap().is_err());
+        }
+        assert!(bound_check(&[0], 1, 0).is_ok());
+        assert!(bound_check(&[], 0, 0).is_ok());
+    }
+
+    #[test]
+    fn batch_capacity_limits_without_allocation() {
+        let max = isize::MAX as usize;
+        assert_eq!(checked_batch_len::<u8>(usize::MAX, max / 3, 3, 3).unwrap(), max / 3 * 3);
+        assert!(checked_batch_len::<u8>(usize::MAX, max / 3 + 1, 3, 3).is_err());
+        assert!(checked_batch_len::<f64>(usize::MAX, max / 24 + 1, 3, 3).is_err());
+        assert!(checked_batch_len::<u8>(usize::MAX, usize::MAX / 4 + 1, 3, 4).is_err());
+        assert!(checked_batch_len::<u8>(usize::MAX, usize::MAX, 4, 3).is_err());
+    }
+}

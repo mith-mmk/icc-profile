@@ -32,7 +32,7 @@
 
 use crate::cms::ColorMatrix3D;
 use std::io::Result;
-use std::io::{Error, ErrorKind};
+use crate::utils::checked_batch_len;
 
 /// YUV to RGB conversion coefficient presets
 ///
@@ -198,12 +198,10 @@ pub fn yuv_to_rgb_with_mode(y: u8, cb: u8, cr: u8, mode: &YUVToRGBCoefficient) -
 /// // rgb = [128, 128, 128, 255, 255, 255, 0, 0, 0]
 /// ```
 pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries * 3 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
 
-    let mut buffer = Vec::with_capacity(entries * 3);
+    let mut buffer = Vec::with_capacity(output_len);
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -245,11 +243,9 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
 ///
 /// Returns error if `buf.len() < entries * 3`
 pub fn yuv_to_rgba_entries_from_yuv(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries * 3 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 4)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(entries * 4);
+    let mut buffer = Vec::with_capacity(output_len);
 
     for i in 0..entries {
         let ptr = i * 3;

@@ -5,6 +5,18 @@ pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:Parametr
     if buf.len() < entry {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
     }
+    // Empty batches historically accept even incomplete curves without evaluating them.
+    let required = match prametic_curve.funtion_type {
+        0 => 1,
+        1 => 3,
+        2 => 4,
+        3 => 5,
+        4 => 7,
+        _ => 0,
+    };
+    if entry != 0 && prametic_curve.vals.len() < required {
+        return Err(Error::new(ErrorKind::InvalidInput, "Parametric curve coefficients shortage"));
+    }
     let mut p = vec![];
     for val in prametic_curve.vals {
         p.push(val.as_f64())

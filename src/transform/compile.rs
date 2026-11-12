@@ -96,9 +96,44 @@ impl CompiledProfile {
         self.0.raw_device_class
     }
 
+    /// Evaluate one pixel, leaving output bit-for-bit unchanged on every `Err`.
+    /// Uses three floats of stack scratch and one evaluation, then copies on
+    /// success. Error diagnostics may allocate. Color semantics match
+    /// `transform_f32` (physical D50 XYZ). No synchronization or panic rollback.
+    pub fn transform_f32_atomic(
+        &self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), TransformError> {
+        if input.len() != self.0.input_channels {
+            return Err(TransformError::InvalidBufferLength {
+                expected: self.0.input_channels,
+                actual: input.len(),
+            });
+        }
+        if output.len() != self.0.output_channels {
+            return Err(TransformError::InvalidBufferLength {
+                expected: self.0.output_channels,
+                actual: output.len(),
+            });
+        }
+        let mut scratch = [0.0; 3];
+        let temporary =
+            scratch
+                .get_mut(..output.len())
+                .ok_or(TransformError::UnsupportedProfileFeature(
+                    "atomic execution supports at most three channels",
+                ))?;
+        self.transform_f32(input, temporary)?;
+        output.copy_from_slice(temporary);
+        Ok(())
+    }
+
     /// Evaluate the compiled stage at its explicit physical D50 XYZ boundary.
     /// Device samples are normalized and must be in `[0, 1]`; no implicit
     /// clipping or HDR-unit reinterpretation occurs here.
+    /// Evaluation errors may partially update output; use `transform_f32_atomic`
+    /// when unchanged output on error is required.
     pub fn transform_f32(&self, input: &[f32], output: &mut [f32]) -> Result<(), TransformError> {
         if input.len() != self.0.input_channels || output.len() != self.0.output_channels {
             return Err(TransformError::InvalidBufferLength {
@@ -420,6 +455,9 @@ impl Transform {
         Ok(())
     }
 
+    /// Convert in one pass. Length errors leave output unchanged, but a later
+    /// sample or evaluation error may leave a partially updated output.
+    /// Use [`Self::transform_f32_atomic`] for unchanged output on every error.
     pub fn transform_f32(&self, input: &[f32], output: &mut [f32]) -> Result<(), TransformError> {
         self.validate_buffer_lengths(input.len(), output.len())?;
         let ic = self.input_channels();
@@ -538,6 +576,44 @@ impl Transform {
         Ok(())
     }
 
+    /// Convert with transactional output: every returned `Err` leaves the
+    /// caller's entire output slice unchanged, including its exact bit patterns.
+    ///
+    /// The immutable, deterministic transform is first evaluated into a fixed
+    /// 192-float (768-byte) stack scratch buffer in chunks of at most 64 pixels.
+    /// Only after every chunk succeeds is the same input converted to `output`.
+    /// Successful calls therefore evaluate each pixel twice. No image-sized
+    /// allocation is made; error diagnostics may allocate. This is not a
+    /// thread-synchronization primitive and does not promise rollback on panic.
+    ///
+    /// Lengths, normalized sample domains, clipping and color semantics are
+    /// identical to [`Self::transform_f32`]. Empty buffers succeed. Alpha is
+    /// still the caller's responsibility. Existing one-pass APIs are unchanged.
+    pub fn transform_f32_atomic(
+        &self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), TransformError> {
+        self.validate_buffer_lengths(input.len(), output.len())?;
+        const PIXELS: usize = 64;
+        const MAX_CHANNELS: usize = 3;
+        let input_channels = self.input_channels();
+        let output_channels = self.output_channels();
+        if input_channels > MAX_CHANNELS || output_channels > MAX_CHANNELS {
+            return Err(TransformError::UnsupportedProfileFeature(
+                "atomic execution supports at most three channels",
+            ));
+        }
+        let mut scratch = [0.0; PIXELS * MAX_CHANNELS];
+        for chunk in input.chunks(PIXELS * input_channels) {
+            let count = chunk.len() / input_channels * output_channels;
+            self.transform_f32(chunk, &mut scratch[..count])?;
+        }
+        // Every per-pixel path was evaluated above with these same immutable
+        // tables, options and inputs. The second pass cannot add a new error.
+        self.transform_f32(input, output)
+    }
+
     /// Transforms into owned storage using the default 64 MiB output bound.
     /// Use [`Self::transform_f32_vec_with_limits`] to select another bound.
     pub fn transform_f32_vec(&self, input: &[f32]) -> Result<Vec<f32>, TransformError> {
@@ -563,12 +639,36 @@ impl Transform {
         Ok(result)
     }
 
+    /// Already transactional: every returned error leaves output unchanged.
+    /// Uses fixed-size chunk scratch and two evaluation passes.
     pub fn transform_u8(&self, input: &[u8], output: &mut [u8]) -> Result<(), TransformError> {
         super::worker::transform_u8(self, input, output)
     }
 
+    /// Explicit transactional alias of [Self::transform_u8].
+    /// Identical result and cost; does not add another validation pass.
+    pub fn transform_u8_atomic(
+        &self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<(), TransformError> {
+        self.transform_u8(input, output)
+    }
+
+    /// Already transactional: every returned error leaves output unchanged.
+    /// Uses fixed-size chunk scratch and two evaluation passes.
     pub fn transform_u16(&self, input: &[u16], output: &mut [u16]) -> Result<(), TransformError> {
         super::worker::transform_u16(self, input, output)
+    }
+
+    /// Explicit transactional alias of [Self::transform_u16].
+    /// Identical result and cost; does not add another validation pass.
+    pub fn transform_u16_atomic(
+        &self,
+        input: &[u16],
+        output: &mut [u16],
+    ) -> Result<(), TransformError> {
+        self.transform_u16(input, output)
     }
 }
 

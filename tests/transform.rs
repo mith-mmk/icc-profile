@@ -648,3 +648,16 @@ fn forward_parametric_unused_power_branch_is_not_validated() {
         ));
     }
 }
+
+#[path = "support/atomic_contract.rs"]
+mod atomic_contract;
+
+#[test]
+fn atomic_rgb_and_cross_channel_matrix_contracts() {
+    let rgb = Profile::parse(&synthetic_rgb_profile()).unwrap();
+    let gray = Profile::parse(&synthetic_gray_profile()).unwrap();
+    for (source, destination) in [(&rgb, &rgb), (&gray, &rgb), (&rgb, &gray)] {
+        let transform = Transform::new(source, destination, TransformOptions::default()).unwrap();
+        atomic_contract::check_atomic_contract(&transform);
+    }
+}

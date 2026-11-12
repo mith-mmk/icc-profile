@@ -136,3 +136,16 @@ at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
+
+### Transactional output
+
+Use `Transform::transform_f32_atomic`, `transform_u8_atomic`, or
+`transform_u16_atomic` (also on `TransformWorker`) when the caller's output
+must remain unchanged on error. Existing f32 execution stays one-pass and may
+partially update on a late error; existing integer execution is already
+transactional. The f32 atomic variant uses two evaluation passes and fixed
+768-byte chunk scratch, not an image-sized temporary. Single-pixel
+`CompiledProfile::transform_f32_atomic` uses one evaluation and 12-byte scratch.
+These are output transactions, not synchronization or panic rollback.
+See [the execution contract](docs/cms-0.1.0-plan.md#borrowed-output-transaction-contract)
+for memory, compatibility and error guarantees.

@@ -9,6 +9,8 @@ pub struct TransformWorker {
 }
 
 impl TransformWorker {
+    /// One-pass execution; a late error may leave output partially updated.
+    /// Use `transform_f32_atomic` for unchanged output on every error.
     pub fn transform_f32(
         &mut self,
         input: &[f32],
@@ -17,16 +19,45 @@ impl TransformWorker {
         self.transform.transform_f32(input, output)
     }
 
+    /// See [`Transform::transform_f32_atomic`] for the unchanged-on-error,
+    /// fixed-scratch, two-pass execution contract.
+    pub fn transform_f32_atomic(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), TransformError> {
+        self.transform.transform_f32_atomic(input, output)
+    }
+
+    /// Already transactional; every returned error leaves output unchanged.
     pub fn transform_u8(&mut self, input: &[u8], output: &mut [u8]) -> Result<(), TransformError> {
         transform_u8(&self.transform, input, output)
     }
 
+    /// Already transactional; every returned error leaves output unchanged.
     pub fn transform_u16(
         &mut self,
         input: &[u16],
         output: &mut [u16],
     ) -> Result<(), TransformError> {
         transform_u16(&self.transform, input, output)
+    }
+    /// Transactional alias; same fixed scratch and two passes as `transform_u8`.
+    pub fn transform_u8_atomic(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<(), TransformError> {
+        self.transform_u8(input, output)
+    }
+
+    /// Transactional alias; same fixed scratch and two passes as `transform_u16`.
+    pub fn transform_u16_atomic(
+        &mut self,
+        input: &[u16],
+        output: &mut [u16],
+    ) -> Result<(), TransformError> {
+        self.transform_u16(input, output)
     }
 }
 

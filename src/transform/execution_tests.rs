@@ -192,3 +192,14 @@ fn worker_cold_and_warm_execution_use_no_image_sized_allocations() {
     assert_eq!(warm_total, 0);
     assert_eq!(output, input);
 }
+
+#[test]
+fn atomic_borrowed_success_has_no_heap_allocation() {
+    let transform = identity_gray_transform();
+    let input = [0.5; 129];
+    let mut output = [0.0; 129];
+    let (result, _, requests) =
+        crate::allocation_probe::watch(1, || transform.transform_f32_atomic(&input, &mut output));
+    result.unwrap();
+    assert_eq!(requests, 0);
+}

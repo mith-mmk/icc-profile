@@ -1745,3 +1745,17 @@ fn gray_lab_matrix_routes_keep_the_physical_xyz_boundary() {
         }
     }
 }
+
+#[path = "support/atomic_contract.rs"]
+mod atomic_contract;
+
+#[test]
+fn atomic_lut_pair_contract() {
+    let source = Profile::parse(&profile(*b"RGB ", vec![(*b"A2B0", identity_mft2())])).unwrap();
+    let destination = Profile::parse(&profile(*b"RGB ", vec![(*b"B2A0", identity_mft2())])).unwrap();
+    let transform = Transform::new(&source, &destination, TransformOptions {
+        rendering_intent: RenderingIntent::Perceptual,
+        ..TransformOptions::default()
+    }).unwrap();
+    atomic_contract::check_atomic_contract(&transform);
+}

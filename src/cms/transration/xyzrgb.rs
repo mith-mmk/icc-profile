@@ -1,3 +1,7 @@
+//! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
+//! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
+//!
 use std::io::Result;
 use crate::utils::checked_batch_len;
 use crate::cms::ColorMatrix3D;
@@ -61,7 +65,8 @@ pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) 
         let y = buf[ptr + 1];
         let z = buf[ptr + 2];
 
-        let (r,g,b) = matrix.convert_3d_u8(x, y, z);
+        let (r,g,b) = matrix.try_convert_3d(x as f64, y as f64, z as f64)?;
+        let (r,g,b) = (r.clamp(0.0, 255.0) as u8, g.clamp(0.0, 255.0) as u8, b.clamp(0.0, 255.0) as u8);
 
         buffer.push(r);
         buffer.push(g);
@@ -83,7 +88,8 @@ pub fn xyz_to_rgba_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient)
         let y = buf[ptr + 1];
         let z = buf[ptr + 2];
 
-        let (r,g,b) = matrix.convert_3d_u8(x, y, z);
+        let (r,g,b) = matrix.try_convert_3d(x as f64, y as f64, z as f64)?;
+        let (r,g,b) = (r.clamp(0.0, 255.0) as u8, g.clamp(0.0, 255.0) as u8, b.clamp(0.0, 255.0) as u8);
 
         buffer.push(r);
         buffer.push(g);

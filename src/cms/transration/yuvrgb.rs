@@ -1,3 +1,7 @@
+//! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
+//! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
+//!
 //! YUV (YCbCr) to RGB color space conversion
 //!
 //! This module provides conversion functions from YUV/YCbCr color space to RGB.
@@ -209,7 +213,7 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
         let cb = buf[ptr + 1] as f64 - 128.0;
         let cr = buf[ptr + 2] as f64 - 128.0;
 
-        let (r,g,b) = matrix.convert_3d(y, cb, cr);
+        let (r,g,b) = matrix.try_convert_3d(y, cb, cr)?;
         let r = (r + 0.5).clamp(0.0, 255.0) as u8;
         let g = (g + 0.5).clamp(0.0, 255.0) as u8;
         let b = (b + 0.5).clamp(0.0, 255.0) as u8;
@@ -253,7 +257,7 @@ pub fn yuv_to_rgba_entries_from_yuv(buf: &[u8], entries: usize, mode: &YUVToRGBC
         let cb = buf[ptr + 1] as f64 - 128.0;
         let cr = buf[ptr + 2] as f64 - 128.0;
 
-        let (r,g,b) = matrix.convert_3d(y, cb, cr);
+        let (r,g,b) = matrix.try_convert_3d(y, cb, cr)?;
         let r = (r + 0.5).clamp(0.0, 255.0) as u8;
         let g = (g + 0.5).clamp(0.0, 255.0) as u8;
         let b = (b + 0.5).clamp(0.0, 255.0) as u8;

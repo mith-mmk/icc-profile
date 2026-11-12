@@ -177,6 +177,29 @@ impl ColorMatrix3D {
         }
     }
 
+    /// Multiply three finite components by a finite matrix without clamping.
+    ///
+    /// Returns `InvalidInput` if any input or matrix coefficient is nonfinite,
+    /// or if arithmetic produces a nonfinite result. Finite out-of-gamut values
+    /// are accepted. Byte callers can apply their existing rounding and clipping
+    /// policy after this check.
+    pub fn try_convert_3d(&self, x: f64, y: f64, z: f64) -> std::io::Result<(f64, f64, f64)> {
+        if ![x, y, z].iter().all(|value| value.is_finite())
+            || !self.e.iter().all(|value| value.is_finite())
+        {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Nonfinite matrix or input"));
+        }
+        let (a, b, c) = self.convert_3d(x, y, z);
+        if ![a, b, c].iter().all(|value| value.is_finite()) {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Nonfinite matrix result"));
+        }
+        Ok((a, b, c))
+    }
+
+    /// Multiply components with ordinary floating-point arithmetic.
+    ///
+    /// This legacy scalar API may return NaN or infinity. Use
+    /// [`Self::try_convert_3d`] when invalid input or overflow must be rejected.
     pub fn convert_3d(&self,x:f64,y:f64,z:f64) -> (f64,f64,f64) {
         let e = self.e;
         let (x,y,z) = (x,y,z);

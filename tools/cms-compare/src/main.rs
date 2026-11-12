@@ -29,12 +29,20 @@ fn main() {
         (Ok(s), Ok(d)) => {
             println!("icc parse=ok");
             match icc_profile::Transform::new(&s, &d, icc_profile::TransformOptions {rendering_intent:icc_intent, black_point_compensation:bpc, ..Default::default()}) {
-                Ok(t) => match t.with_algorithm_profile(icc_profile::AlgorithmProfile::default().with_clut_3d(if trilinear { icc_profile::ClutInterpolation3D::Trilinear } else { icc_profile::ClutInterpolation3D::Tetrahedral })).transform_u16_atomic(&input, &mut output) {
+                Ok(t) => {
+                    let t = t.with_algorithm_profile(icc_profile::AlgorithmProfile::default().with_clut_3d(if trilinear { icc_profile::ClutInterpolation3D::Trilinear } else { icc_profile::ClutInterpolation3D::Tetrahedral }));
+                    if bpc {
+                        println!("icc matrix BPC diagnostics={:?}", t.bpc_diagnostics());
+                        println!("icc CMYK BPC diagnostics={:?}", t.cmyk_bpc_diagnostics());
+                        println!("icc memory={:?}", t.memory_usage());
+                    }
+                    match t.transform_u16_atomic(&input, &mut output) {
                     Ok(()) => {
                         save(&args[3], "icc", &output);
                         println!("icc transform=ok");
                     }
                     Err(e) => println!("icc execute={e:?}"),
+                    }
                 },
                 Err(e) => println!("icc compile={e:?}"),
             }

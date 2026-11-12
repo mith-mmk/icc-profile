@@ -1,0 +1,165 @@
+{
+  "lcms_version": 2190,
+  "profiles": [
+    {
+      "pcs": "lab",
+      "variant": "baseline",
+      "file": "bpc-tag-experiment-lab-baseline.icc",
+      "sha256": "22626310b4e8298576a647d11b0f3bc2ba2c13e61b9420ed5c752355a4371844",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "perceptual_input_supported": 0,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 0
+    },
+    {
+      "pcs": "lab",
+      "variant": "add-a2b0",
+      "file": "bpc-tag-experiment-lab-add-a2b0.icc",
+      "sha256": "d6ed5be3361e2a03898eb162423c6c2d7121d9c00da6c03e4175fceae9fb39eb",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.02597666189572373,
+        0.026941155253810134,
+        0.02222375896886798
+      ],
+      "perceptual_input_supported": 1,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 0
+    },
+    {
+      "pcs": "lab",
+      "variant": "add-b2a1",
+      "file": "bpc-tag-experiment-lab-add-b2a1.icc",
+      "sha256": "9a956e05da9b6667a32db120e173b37ba0f624ef380c41877fdc494084264838",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "perceptual_input_supported": 0,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 1
+    },
+    {
+      "pcs": "lab",
+      "variant": "all-six",
+      "file": "bpc-tag-experiment-lab-all-six.icc",
+      "sha256": "c0b17644bc984576602287ddde0022d323f5fa410a88fcc1b321453b1c96820c",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.02597666189572373,
+        0.026941155253810134,
+        0.02222375896886798
+      ],
+      "perceptual_input_supported": 1,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 1
+    },
+    {
+      "pcs": "lab",
+      "variant": "all-six-metadata",
+      "file": "bpc-tag-experiment-lab-all-six-metadata.icc",
+      "sha256": "63bfa246a590a0d715f6dd2d9a9dc99b4f443e7eefaf5baf6ffd8bd63696c560",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.02597666189572373,
+        0.026941155253810134,
+        0.02222375896886798
+      ],
+      "perceptual_input_supported": 1,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 1
+    },
+    {
+      "pcs": "xyz",
+      "variant": "baseline",
+      "file": "bpc-tag-experiment-xyz-baseline.icc",
+      "sha256": "72eba9a40a9db8163c02b52fe805b0b4ab99b4bfc616a762f7e7bf8833551bf9",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "perceptual_input_supported": 0,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 0
+    },
+    {
+      "pcs": "xyz",
+      "variant": "add-a2b0",
+      "file": "bpc-tag-experiment-xyz-add-a2b0.icc",
+      "sha256": "194259e4400e9423181da817c75e1a244d5ef8b11e384024baa47270e55b2c7e",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.05334761089324494,
+        0.055328366410749785,
+        0.0456403694522275
+      ],
+      "perceptual_input_supported": 1,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 0
+    },
+    {
+      "pcs": "xyz",
+      "variant": "add-b2a1",
+      "file": "bpc-tag-experiment-xyz-add-b2a1.icc",
+      "sha256": "dfceaea5bf03b4aee6e2eded70f5f6566eab7df8c6e46007a42e25008d98b925",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "perceptual_input_supported": 0,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 1
+    },
+    {
+      "pcs": "xyz",
+      "variant": "all-six",
+      "file": "bpc-tag-experiment-xyz-all-six.icc",
+      "sha256": "7918cdfb5b76e5f751a768dcda29c2914e6c6db0e3a2513b457f9ecde5a6ba0f",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.05334761089324494,
+        0.055328366410749785,
+        0.0456403694522275
+      ],
+      "perceptual_input_supported": 1,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 1
+    },
+    {
+      "pcs": "xyz",
+      "variant": "all-six-metadata",
+      "file": "bpc-tag-experiment-xyz-all-six-metadata.icc",
+      "sha256": "f674f115979bb82c09f6041b920c6c145f2447a2f7da41a7a9284286c0ebd3d2",
+      "detect_ok": 1,
+      "relative_black_xyz": [
+        0.05334761089324494,
+        0.055328366410749785,
+        0.0456403694522275
+      ],
+      "perceptual_input_supported": 1,
+      "perceptual_output_supported": 1,
+      "relative_input_supported": 1,
+      "relative_output_supported": 1
+    }
+  ]
+}

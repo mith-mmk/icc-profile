@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.1.0 - Unreleased
+
+### Added
+
+- Explicit `simple` profile-free conversions and `icc` checked-engine namespaces,
+  with migration documentation. Existing root and legacy entrypoints remain.
+- Transactional borrowed-output methods, fallible allocating helpers, execution
+  limits, bounded inspection and direction-specific profile compilation.
+- Bounded CMYK input/output, absolute-intent and black-point-compensation routes.
+  Support is route-specific: see the README and linked CMYK/BPC scope documents.
+- Explicit numerical algorithm profiles, including optional 3D trilinear
+  interpolation; defaults remain 3D tetrahedral and 4D multilinear.
+- Checked legacy LUT scalar helpers and a non-published inspection/conversion CLI.
+
+### Fixed
+
+- Legacy fixed-point decoding, LUT interpolation, Lab/white-point math, packed
+  buffer validation, nonfinite arithmetic and allocation-failure handling.
+- Legacy tag/parser boundaries and checked profile-helper route validation.
+  These corrections can change formerly incorrect results or reject malformed
+  inputs; this is not a claim that all legacy interfaces are panic-free.
+
+### Performance and validation
+
+- Narrow inverse parametric TRC searches while preserving the original search
+  result bits, endpoint policy and fallback; no approximate inverse LUT is used.
+- Add synthetic, differential and independently controlled CMS comparisons.
+  The historical 48/255 ColorSync discrepancy was an intent-mismatched sips
+  comparison. Matched direct-API tests measured at most 2/255 for the documented
+  SWOP/sRGB grids, not a universal error bound. See the validation documents.
+- Test Linux, Windows and macOS stable plus Linux Rust 1.91.0 in CI.
+
+### Compatibility and release scope
+
+- Minimum supported Rust is 1.91. Existing `TransformOptions` struct literals
+  and root exports remain supported; migration is additive, without deprecation.
+- Profile-free math is never an implicit fallback for ICC failures. N-color, MPE
+  and unsupported CMYK/BPC combinations remain explicit errors. Alpha and
+  format-specific CMYK inversion remain the caller's responsibility.
+- Keep `bin-rs` 0.1.0 with its `util` feature. No native CMS dependency is added.
+- Publication and downstream WML2 updates are separate steps; see
+  [the 0.1.0 release checklist](docs/release-0.1.0.md).
+
 ## 0.0.8 - 2026-11-11
 
 ### Dependencies

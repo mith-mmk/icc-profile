@@ -11,7 +11,7 @@ stages, 1D interpolation, and tetrahedral 3D interpolation.
 Version 0.0.7 corrects the physical PCS connection between paired LUT stages
 when the destination uses Lab PCS. Matrix destinations continue to use XYZ.
 
-The development branch adds explicitly bounded CMYK output and relative matrix
+Version 0.1.0 adds explicitly bounded CMYK output and relative matrix
 black-point compensation, described below. N-color, MPE and other unsupported
 routes return `UnsupportedProfileFeature`; there is no simplified color fallback.
 Alpha is not passed to the CMS and must be handled by the caller.
@@ -30,9 +30,10 @@ Alpha is not passed to the CMS and must be handled by the caller.
   Migration is recommended, not enforced: no `#[deprecated]` attributes or
   removal are introduced. See [the migration map](docs/api-migration.md).
 
-This integration targets the `0.1.0` development line. `Cargo.toml` still declares
-package version `0.0.8`; the new namespaces described here are development
-changes, not a claim that a new crates.io release has been published.
+This checkout declares version `0.1.0`. See the [changelog](CHANGELOG.md) for
+changes since 0.0.8 and the [release checklist](docs/release-0.1.0.md) for
+verification and publication status. A version in this checkout is not proof
+of crates.io publication.
 
 ## Interpolation and LittleCMS compatibility
 
@@ -213,7 +214,7 @@ Trusted sources for ICC profiles:
 
 ## Release boundary
 
-The 0.1.0 development branch adds perceptual, relative-colorimetric, and saturation CMYK to RGB display through v2 mft2 and v4 mAB source profiles. Published 0.0.8 remains unchanged. Unsupported color
+Version 0.1.0 adds perceptual, relative-colorimetric, and saturation CMYK to RGB display through v2 mft2 and v4 mAB source profiles. Unsupported color
 spaces and processing elements fail closed rather than being approximated.
 ## License
 

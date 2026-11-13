@@ -10,7 +10,7 @@ pub fn cmyk_to_rgb(y:u8,m:u8,c:u8,k:u8) -> (u8,u8,u8) {
 }
 
 pub fn cmyk_to_rgb_lut16(c:u8,m:u8,y:u8,k:u8,lut:&Mft2,wp:&WhitePoint) -> (u8,u8,u8) {
-    let (l,a,b) = cmyk_to_lab_lut16(y,m,c,k,lut);
+    let (l,a,b) = cmyk_to_lab_lut16(c,m,y,k,lut);
     let (x,y,z) = lab_to_xyz_wp(l,a,b,wp);
     let (r,g,b) = xyz_to_rgb(x as f64,y as f64,z as f64);
 
@@ -18,7 +18,7 @@ pub fn cmyk_to_rgb_lut16(c:u8,m:u8,y:u8,k:u8,lut:&Mft2,wp:&WhitePoint) -> (u8,u8
 }
 
 pub fn cmyk_to_rgb_lut8(c:u8,m:u8,y:u8,k:u8,lut:&Mft1,wp:&WhitePoint) -> (u8,u8,u8) {
-    let (l,a,b) = cmyk_to_lab_lut8(y,m,c,k,lut);
+    let (l,a,b) = cmyk_to_lab_lut8(c,m,y,k,lut);
     let (x,y,z) = lab_to_xyz_wp(l,a,b,wp);
     let (r,g,b) = xyz_to_rgb(x as f64,y as f64,z as f64);
 

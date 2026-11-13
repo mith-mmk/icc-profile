@@ -1,17 +1,17 @@
-/// Integration tests: ICC Profile を使ったカラーマネジメント変換
-///
-/// テスト対象:
-/// - CMYK→RGB (プロファイルあり: JapanColor2011Coated, ycck.icc)
-/// - CMYK→L*a*b* → XYZ → RGB パイプライン
-/// - プロファイルなし CMYK→RGB (フォールバック計算)
-/// - sRGB プロファイルのタグ内容確認
+//! Integration tests: ICC Profile を使ったカラーマネジメント変換
+//!
+//! テスト対象:
+//! - CMYK→RGB (プロファイルあり: JapanColor2011Coated, ycck.icc)
+//! - CMYK→L*a*b* → XYZ → RGB パイプライン
+//! - プロファイルなし CMYK→RGB (フォールバック計算)
+//! - sRGB プロファイルのタグ内容確認
 
 use icc_profile::cms::transration::{
-    cmyk_to_lab_lut8, cmyk_to_lab_lut16, cmyk_to_rgb, cmyk_to_rgb_from_profile, lab_to_xyz_wp, xyz_to_rgb,
-    WhitePoint,
+    cmyk_to_lab_lut16, cmyk_to_lab_lut8, cmyk_to_rgb, cmyk_to_rgb_from_profile, lab_to_xyz_wp,
+    xyz_to_rgb, WhitePoint,
 };
 use icc_profile::iccprofile::{Data, DecodedICCProfile, ICCNumber};
-use icc_profile::utils::{delta_e76, ciede2000};
+use icc_profile::utils::{ciede2000, delta_e76};
 
 fn sample(name: &str) -> String {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -73,7 +73,12 @@ fn japan_color_heavy_ink_darkens_rgb() {
     // 大量インクは紙白より暗いはず
     let heavy = r_heavy as u32 + g_heavy as u32 + b_heavy as u32;
     let white = r_white as u32 + g_white as u32 + b_white as u32;
-    assert!(heavy < white, "heavy ink ({}) should be darker than white ({})", heavy, white);
+    assert!(
+        heavy < white,
+        "heavy ink ({}) should be darker than white ({})",
+        heavy,
+        white
+    );
 }
 
 #[test]
@@ -82,7 +87,13 @@ fn japan_color_yellow_ink_has_low_blue() {
     let decoded = load_decoded("JapanColor2011Coated.icc");
     // Y(Yellow)=200, C=M=K=0 → 青が少ない黄色系
     let (r, g, b) = cmyk_to_rgb_from_profile(0, 0, 200, 0, &decoded);
-    assert!(b < r.max(g), "yellow ink: B({}) should be less than R({}) or G({})", b, r, g);
+    assert!(
+        b < r.max(g),
+        "yellow ink: B({}) should be less than R({}) or G({})",
+        b,
+        r,
+        g
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -95,10 +106,7 @@ fn japan_color_a2b0_type_check() {
     // A2B0 が何らかの LUT 型であることを確認 (Lut8 or Lut16 or LutAtoB)
     let decoded = load_decoded("JapanColor2011Coated.icc");
     let tag = decoded.tags.get("A2B0").expect("A2B0 must exist");
-    let is_lut = matches!(
-        tag,
-        Data::Lut8(_) | Data::Lut16(_) | Data::LutAtoB(_)
-    );
+    let is_lut = matches!(tag, Data::Lut8(_) | Data::Lut16(_) | Data::LutAtoB(_));
     assert!(is_lut, "A2B0 should be a LUT type");
 }
 
@@ -124,7 +132,12 @@ fn japan_color_cmyk_to_lab_via_lut8_heavy_ink() {
         let (l_white, _, _) = cmyk_to_lab_lut8(0, 0, 0, 0, lut8);
         // LUT 端点 255 はバグあり → 200 で代用
         let (l_dark, _, _) = cmyk_to_lab_lut8(200, 200, 200, 200, lut8);
-        assert!(l_dark < l_white, "heavy ink L*({}) should be darker than white L*({})", l_dark, l_white);
+        assert!(
+            l_dark < l_white,
+            "heavy ink L*({}) should be darker than white L*({})",
+            l_dark,
+            l_white
+        );
     }
 }
 
@@ -169,7 +182,10 @@ fn ycck_cmyk_to_lab_via_lut16_dark_ink() {
         // Heavy ink: CMYK(200,200,200,200)
         let (l_dark, _, _) = cmyk_to_lab_lut16(200, 200, 200, 200, lut16);
         println!("ycck.icc: white L*={:.2}, dark L*={:.2}", l_white, l_dark);
-        assert!(l_dark < l_white, "heavy ink L* should be darker than white L*");
+        assert!(
+            l_dark < l_white,
+            "heavy ink L* should be darker than white L*"
+        );
     }
 }
 
@@ -211,8 +227,13 @@ fn ycck_white_to_rgb() {
     let decoded = load_decoded("ycck.icc");
     let (r, g, b) = cmyk_to_rgb_from_profile(0, 0, 0, 0, &decoded);
     // 白 → 高輝度
-    assert!(r > 150 || g > 150 || b > 150,
-        "ycck white should be bright: R={} G={} B={}", r, g, b);
+    assert!(
+        r > 150 || g > 150 || b > 150,
+        "ycck white should be bright: R={} G={} B={}",
+        r,
+        g,
+        b
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -252,11 +273,19 @@ fn asus_rxyz_tag_exists_and_reasonable() {
         Data::XYZNumberArray(arr) => {
             let xyz = arr.first().expect("rXYZ array must not be empty");
             let y = xyz.y.as_f64();
-            assert!(y > 0.05 && y < 0.6, "rXYZ Y should be reasonable, got {}", y);
+            assert!(
+                y > 0.05 && y < 0.6,
+                "rXYZ Y should be reasonable, got {}",
+                y
+            );
         }
         Data::XYZNumber(xyz) => {
             let y = xyz.y.as_f64();
-            assert!(y > 0.05 && y < 0.6, "rXYZ Y should be reasonable, got {}", y);
+            assert!(
+                y > 0.05 && y < 0.6,
+                "rXYZ Y should be reasonable, got {}",
+                y
+            );
         }
         _ => panic!("rXYZ should be XYZNumber or XYZNumberArray, got {:?}", tag),
     }
@@ -314,10 +343,21 @@ fn japan_color_cmyk_to_lab_range_validation() {
     if let Data::Lut8(lut8) = tag {
         let (l, a, b) = cmyk_to_lab_lut8(100, 50, 30, 10, lut8);
         // Lab ranges: L* 0-100, a* -127-+127, b* -127-+127
-        assert!(l >= 0.0 && l <= 100.0, "L* {} out of range [0,100]", l);
-        assert!(a >= -127.0 && a <= 127.0, "a* {} out of range [-127,127]", a);
-        assert!(b >= -127.0 && b <= 127.0, "b* {} out of range [-127,127]", b);
-        println!("JapanColor CMYK(100,50,30,10) → Lab({:.2}, {:.2}, {:.2})", l, a, b);
+        assert!((0.0..=100.0).contains(&l), "L* {} out of range [0,100]", l);
+        assert!(
+            (-127.0..=127.0).contains(&a),
+            "a* {} out of range [-127,127]",
+            a
+        );
+        assert!(
+            (-127.0..=127.0).contains(&b),
+            "b* {} out of range [-127,127]",
+            b
+        );
+        println!(
+            "JapanColor CMYK(100,50,30,10) → Lab({:.2}, {:.2}, {:.2})",
+            l, a, b
+        );
     }
 }
 
@@ -329,10 +369,21 @@ fn ycck_cmyk_to_lab_range_validation() {
     let tag = decoded.tags.get("A2B0").expect("A2B0 must exist");
     if let Data::Lut16(lut16) = tag {
         let (l, a, b) = cmyk_to_lab_lut16(150, 100, 75, 20, lut16);
-        assert!(l >= 0.0 && l <= 100.0, "L* {} out of range [0,100]", l);
-        assert!(a >= -127.0 && a <= 127.0, "a* {} out of range [-127,127]", a);
-        assert!(b >= -127.0 && b <= 127.0, "b* {} out of range [-127,127]", b);
-        println!("ycck CMYK(150,100,75,20) → Lab({:.2}, {:.2}, {:.2})", l, a, b);
+        assert!((0.0..=100.0).contains(&l), "L* {} out of range [0,100]", l);
+        assert!(
+            (-127.0..=127.0).contains(&a),
+            "a* {} out of range [-127,127]",
+            a
+        );
+        assert!(
+            (-127.0..=127.0).contains(&b),
+            "b* {} out of range [-127,127]",
+            b
+        );
+        println!(
+            "ycck CMYK(150,100,75,20) → Lab({:.2}, {:.2}, {:.2})",
+            l, a, b
+        );
     }
 }
 
@@ -356,10 +407,10 @@ fn japan_vs_ycck_cmyk_neutral_de76_comparison() {
     // 同じ CMYK ニュートラル値を両プロファイルで変換 → Lab が近いか確認
     let jp = load_decoded("JapanColor2011Coated.icc");
     let yk = load_decoded("ycck.icc");
-    
+
     let jp_tag = jp.tags.get("A2B0").expect("JP A2B0");
     let yk_tag = yk.tags.get("A2B0").expect("YK A2B0");
-    
+
     if let (Data::Lut8(jp_lut), Data::Lut16(yk_lut)) = (jp_tag, yk_tag) {
         let lab_jp = cmyk_to_lab_lut8(50, 50, 50, 0, jp_lut);
         let lab_yk = cmyk_to_lab_lut16(50, 50, 50, 0, yk_lut);
@@ -370,7 +421,11 @@ fn japan_vs_ycck_cmyk_neutral_de76_comparison() {
             lab_jp.0, lab_jp.1, lab_jp.2, lab_yk.0, lab_yk.1, lab_yk.2, de76, de2000
         );
         // Different profiles may produce different Lab values (>5 ΔE acceptable)
-        assert!(de76 < 15.0, "Different profiles should still be relatively close, got ΔE76={}", de76);
+        assert!(
+            de76 < 15.0,
+            "Different profiles should still be relatively close, got ΔE76={}",
+            de76
+        );
     }
 }
 
@@ -386,8 +441,15 @@ fn cmyk_pipeline_white_to_rgb_brightness() {
         let (x, y, z) = lab_to_xyz_wp(l, a, b, &wp);
         let (r, g, b) = xyz_to_rgb(x, y, z);
         let brightness = (r as u32 + g as u32 + b as u32) / 3;
-        assert!(brightness > 200, "white paper brightness {} should be >200", brightness);
-        println!("White paper RGB({}, {}, {}) brightness={}", r, g, b, brightness);
+        assert!(
+            brightness > 200,
+            "white paper brightness {} should be >200",
+            brightness
+        );
+        println!(
+            "White paper RGB({}, {}, {}) brightness={}",
+            r, g, b, brightness
+        );
     }
 }
 
@@ -403,7 +465,14 @@ fn cmyk_pipeline_dark_to_rgb_darkness() {
         let (x, y, z) = lab_to_xyz_wp(l, a, b, &wp);
         let (r, g, b) = xyz_to_rgb(x, y, z);
         let brightness = (r as u32 + g as u32 + b as u32) / 3;
-        assert!(brightness < 100, "heavy ink brightness {} should be <100", brightness);
-        println!("Heavy ink RGB({}, {}, {}) brightness={}", r, g, b, brightness);
+        assert!(
+            brightness < 100,
+            "heavy ink brightness {} should be <100",
+            brightness
+        );
+        println!(
+            "Heavy ink RGB({}, {}, {}) brightness={}",
+            r, g, b, brightness
+        );
     }
 }

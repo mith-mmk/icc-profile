@@ -1,28 +1,42 @@
 use crate::iccprofile::{Curve, Data, ICCNumber, MultiLocalizedUnicodeType};
-use std::fmt::{self, Write as FmtWrite};
 use crate::DecodedICCProfile;
-use bin_rs::io::*;
 use crate::ICCProfile;
+use bin_rs::io::*;
+use std::fmt::{self, Write as FmtWrite};
 use std::fs::File;
-use std::io::Result;
-use std::io::{Error,ErrorKind};
 use std::io::prelude::*;
+use std::io::Result;
+use std::io::{Error, ErrorKind};
 
-pub(crate) fn bound_check(buf:&[u8],ptr:usize,size:usize) -> Result<()> {
+pub(crate) fn bound_check(buf: &[u8], ptr: usize, size: usize) -> Result<()> {
     if ptr > buf.len() || size > buf.len() - ptr {
         return Err(Error::other(format!(
-            "Outbound check error len {} but offset {} and size {}", buf.len(), ptr, size
+            "Outbound check error len {} but offset {} and size {}",
+            buf.len(),
+            ptr,
+            size
         )));
     }
     Ok(())
 }
 
 // Validate both input indexing and the output Vec's byte capacity before allocation.
-pub(crate) fn checked_batch_len<T>(input_len: usize, entries: usize, input_channels: usize, output_channels: usize) -> Result<usize> {
+pub(crate) fn checked_batch_len<T>(
+    input_len: usize,
+    entries: usize,
+    input_channels: usize,
+    output_channels: usize,
+) -> Result<usize> {
     let invalid_size = || Error::new(ErrorKind::InvalidInput, "Batch size overflow");
-    let input = entries.checked_mul(input_channels).ok_or_else(invalid_size)?;
-    let output = entries.checked_mul(output_channels).ok_or_else(invalid_size)?;
-    let bytes = output.checked_mul(std::mem::size_of::<T>()).ok_or_else(invalid_size)?;
+    let input = entries
+        .checked_mul(input_channels)
+        .ok_or_else(invalid_size)?;
+    let output = entries
+        .checked_mul(output_channels)
+        .ok_or_else(invalid_size)?;
+    let bytes = output
+        .checked_mul(std::mem::size_of::<T>())
+        .ok_or_else(invalid_size)?;
     if bytes > isize::MAX as usize {
         return Err(invalid_size());
     }
@@ -32,7 +46,7 @@ pub(crate) fn checked_batch_len<T>(input_len: usize, entries: usize, input_chann
     Ok(output)
 }
 
-pub fn dump(filename:String,buf:&mut [u8]) -> Result<()>  {
+pub fn dump(filename: String, buf: &mut [u8]) -> Result<()> {
     let mut file = File::create(filename)?;
     file.write_all(buf)?;
     file.flush()?;
@@ -43,7 +57,7 @@ pub fn dump(filename:String,buf:&mut [u8]) -> Result<()>  {
 ///
 /// For untrusted or potentially growing files, use [`load_with_limit`] instead.
 /// This header loader does not validate all tag payloads.
-pub fn load(filename:String) -> Result<ICCProfile> {
+pub fn load(filename: String) -> Result<ICCProfile> {
     let mut file = File::open(filename)?;
     let mut buf = vec![];
     file.read_to_end(&mut buf)?;
@@ -52,34 +66,62 @@ pub fn load(filename:String) -> Result<ICCProfile> {
 
 pub fn icc_profile_header_print(header: &ICCProfile) -> String {
     let mut str = "=========== ICC Profile ===========\n".to_string();
-    str += &format!("cmmid {}\n",read_ascii_string(&header.cmmid.to_be_bytes(),0,4));
-    str += &format!("version {:08x}\n",&header.version);
-    str += &format!("Device Class {}\n",read_ascii_string(&header.device_class.to_be_bytes(),0,4));
-    str += &format!("Color Space {}\n",read_ascii_string(&header.color_space.to_be_bytes(),0,4));
-    str += &format!("PCS {}\n",read_ascii_string(&header.pcs.to_be_bytes(),0,4));
-    str += &format!("DATE {}\n",header.create_date);
-    str += &format!("It MUST be 'ascp' {}\n",read_ascii_string(&header.magicnumber_ascp.to_be_bytes(),0,4));
-    str += &format!("Platform {}\n",read_ascii_string(&header.platform.to_be_bytes(),0,4));
-    str += &format!("flags {}\n",&header.flags);
-    str += &format!("manufacturer {}\n",read_ascii_string(&header.manufacturer.to_be_bytes(),0,4));
-    str += &format!("Model {:04x}\n",&header.model);
-    str += &format!("Attributes {:>064b}\n",&header.attributes);
-    str += &format!("Illiuminate X:{} Y:{} Z:{}\n",&header.illuminate.x.as_f64(),&header.illuminate.y.as_f64(),&header.illuminate.z.as_f64());
-    str += &format!("Creator {}\n",read_ascii_string(&header.creator.to_be_bytes(),0,4));
-    str += &format!("Profile ID (MD5 {:016x})\n",&header.profile_id);
-    str += &format!("Data length {}bytes\n",&header.length);
+    str += &format!(
+        "cmmid {}\n",
+        read_ascii_string(&header.cmmid.to_be_bytes(), 0, 4)
+    );
+    str += &format!("version {:08x}\n", &header.version);
+    str += &format!(
+        "Device Class {}\n",
+        read_ascii_string(&header.device_class.to_be_bytes(), 0, 4)
+    );
+    str += &format!(
+        "Color Space {}\n",
+        read_ascii_string(&header.color_space.to_be_bytes(), 0, 4)
+    );
+    str += &format!(
+        "PCS {}\n",
+        read_ascii_string(&header.pcs.to_be_bytes(), 0, 4)
+    );
+    str += &format!("DATE {}\n", header.create_date);
+    str += &format!(
+        "It MUST be 'ascp' {}\n",
+        read_ascii_string(&header.magicnumber_ascp.to_be_bytes(), 0, 4)
+    );
+    str += &format!(
+        "Platform {}\n",
+        read_ascii_string(&header.platform.to_be_bytes(), 0, 4)
+    );
+    str += &format!("flags {}\n", header.flags);
+    str += &format!(
+        "manufacturer {}\n",
+        read_ascii_string(&header.manufacturer.to_be_bytes(), 0, 4)
+    );
+    str += &format!("Model {:04x}\n", &header.model);
+    str += &format!("Attributes {:>064b}\n", &header.attributes);
+    str += &format!(
+        "Illiuminate X:{} Y:{} Z:{}\n",
+        header.illuminate.x.as_f64(),
+        header.illuminate.y.as_f64(),
+        header.illuminate.z.as_f64()
+    );
+    str += &format!(
+        "Creator {}\n",
+        read_ascii_string(&header.creator.to_be_bytes(), 0, 4)
+    );
+    str += &format!("Profile ID (MD5 {:016x})\n", &header.profile_id);
+    str += &format!("Data length {}bytes\n", header.length);
     str
 }
-
 
 /// Decode and format a profile without input, decoding, or output resource limits.
 ///
 /// This legacy API inherits the legacy decoder's validation limitations. To bound
 /// formatting of already-decoded data, use [`decoded_print_with_limit`]. An output
 /// budget does not bound parsing or allocations performed by the decoder.
-pub fn icc_profile_print(icc_profile :&ICCProfile,verbose:usize) -> Result<String> {
+pub fn icc_profile_print(icc_profile: &ICCProfile, verbose: usize) -> Result<String> {
     let decoded = DecodedICCProfile::new(&icc_profile.data)?;
-    decoded_print(&decoded,verbose)
+    decoded_print(&decoded, verbose)
 }
 
 /// decoded_print to String ICC Profile data
@@ -89,62 +131,86 @@ pub fn icc_profile_print(icc_profile :&ICCProfile,verbose:usize) -> Result<Strin
 /// allocations are unrestricted, and malformed public payloads may panic in that
 /// legacy formatter. Use [`decoded_print_with_limit`] for bounded inspection.
 /// Tags are sorted lexicographically for deterministic output.
-
-pub fn decoded_print(header :&DecodedICCProfile,verbose:usize) -> Result<String> {
+pub fn decoded_print(header: &DecodedICCProfile, verbose: usize) -> Result<String> {
     let mut str = "=========== ICC Profile ===========\n".to_string();
-    str += &format!("cmmid {}\n",read_ascii_string(&header.cmmid.to_be_bytes(),0,4));
-    str += &format!("version {}.{:02x}\n",&header.version>>24 & 0xff,&header.version>>16 & 0xff);
-    str += &format!("Device Class {}\n",read_ascii_string(&header.device_class.to_be_bytes(),0,4));
-    str += &format!("Color Space {}\n",read_ascii_string(&header.color_space.to_be_bytes(),0,4));
-    str += &format!("PCS {}\n",read_ascii_string(&header.pcs.to_be_bytes(),0,4));
-    str += &format!("DATE {}\n",header.create_date);
-    str += &format!("It MUST be 'ascp' {}\n",read_ascii_string(&header.magicnumber_ascp.to_be_bytes(),0,4));
-    str += &format!("Platform {}\n",read_ascii_string(&header.platform.to_be_bytes(),0,4));
-    str += &format!("flags {}\n",&header.flags);
-    str += &format!("manufacturer {}\n",read_ascii_string(&header.manufacturer.to_be_bytes(),0,4));
-    str += &format!("Model {:04x}\n",&header.model);
-    str += &format!("Attributes {:>064b}\n",&header.attributes);
+    str += &format!(
+        "cmmid {}\n",
+        read_ascii_string(&header.cmmid.to_be_bytes(), 0, 4)
+    );
+    str += &format!(
+        "version {}.{:02x}\n",
+        &header.version >> 24 & 0xff,
+        &header.version >> 16 & 0xff
+    );
+    str += &format!(
+        "Device Class {}\n",
+        read_ascii_string(&header.device_class.to_be_bytes(), 0, 4)
+    );
+    str += &format!(
+        "Color Space {}\n",
+        read_ascii_string(&header.color_space.to_be_bytes(), 0, 4)
+    );
+    str += &format!(
+        "PCS {}\n",
+        read_ascii_string(&header.pcs.to_be_bytes(), 0, 4)
+    );
+    str += &format!("DATE {}\n", header.create_date);
+    str += &format!(
+        "It MUST be 'ascp' {}\n",
+        read_ascii_string(&header.magicnumber_ascp.to_be_bytes(), 0, 4)
+    );
+    str += &format!(
+        "Platform {}\n",
+        read_ascii_string(&header.platform.to_be_bytes(), 0, 4)
+    );
+    str += &format!("flags {}\n", header.flags);
+    str += &format!(
+        "manufacturer {}\n",
+        read_ascii_string(&header.manufacturer.to_be_bytes(), 0, 4)
+    );
+    str += &format!("Model {:04x}\n", &header.model);
+    str += &format!("Attributes {:>064b}\n", &header.attributes);
 
     let x = header.illuminate.x.as_f64();
     let y = header.illuminate.y.as_f64();
     let z = header.illuminate.z.as_f64();
-    str += &format!("Illiuminate X:{} Y:{} Z:{}\n",x,y,z);
-    str += &format!("Creator {}\n",read_ascii_string(&header.creator.to_be_bytes(),0,4));
-    str += &format!("Profile ID (MD5 {:016x})\n",&header.profile_id);
-    str += &format!("Data length {}bytes\n",&header.length);
+    str += &format!("Illiuminate X:{} Y:{} Z:{}\n", x, y, z);
+    str += &format!(
+        "Creator {}\n",
+        read_ascii_string(&header.creator.to_be_bytes(), 0, 4)
+    );
+    str += &format!("Profile ID (MD5 {:016x})\n", &header.profile_id);
+    str += &format!("Data length {}bytes\n", header.length);
     str += "\n==== ICC Profiles defined data ====\n";
-    for (tag_name,val) in sorted_tags(header)? {
+    for (tag_name, val) in sorted_tags(header)? {
         let tag_name = tag_name.to_string();
-        str +=  &format!("Tag name {}\n",tag_name);
+        str += &format!("Tag name {}\n", tag_name);
         match &*tag_name {
             "A2B0" | "A2B1" | "A2B2" | "B2A0" | "B2A1" | "B2A2" => {
                 str += "LUT Table\n";
-            },
+            }
             "chad" => {
                 str += "Chromatic adaptation matrix\n";
-            },
+            }
             "bkpt" => {
                 str += "Media Black Point\n";
-            },
+            }
 
             "bXYZ" | "gXYZ" | "rXYZ" => {
                 str += "rgb XYZ Tag ";
-            },
-            "bTRC" | "gTRC" | "rTRC"=> { // bTRC
+            }
+            "bTRC" | "gTRC" | "rTRC" => {
+                // bTRC
                 str += "Color tone reproduction curve\n";
-            },
+            }
             "desc" => {
                 str += "description: ";
-            },
+            }
             "cprt" => {
                 str += "copyright: ";
-            },
-            "wtpt" => {
-                str += "Media white point\n"
-            },
-            _ => {
-            },
-
+            }
+            "wtpt" => str += "Media white point\n",
+            _ => {}
         }
         str += &val.as_string(verbose);
         str += "\n";
@@ -208,7 +274,7 @@ fn sorted_tags(header: &DecodedICCProfile) -> Result<Vec<(&String, &Data)>> {
     tags.try_reserve_exact(header.tags.len())
         .map_err(|_| Error::from(ErrorKind::OutOfMemory))?;
     tags.extend(header.tags.iter());
-    tags.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+    tags.sort_unstable_by_key(|(left, _)| *left);
     Ok(tags)
 }
 
@@ -493,7 +559,9 @@ mod boundary_tests {
     #[test]
     fn invalid_ranges_never_overflow() {
         for (offset, size) in [(usize::MAX, 1), (1, usize::MAX), (usize::MAX, usize::MAX)] {
-            assert!(std::panic::catch_unwind(|| bound_check(&[0], offset, size)).unwrap().is_err());
+            assert!(std::panic::catch_unwind(|| bound_check(&[0], offset, size))
+                .unwrap()
+                .is_err());
         }
         assert!(bound_check(&[0], 1, 0).is_ok());
         assert!(bound_check(&[], 0, 0).is_ok());
@@ -502,14 +570,16 @@ mod boundary_tests {
     #[test]
     fn batch_capacity_limits_without_allocation() {
         let max = isize::MAX as usize;
-        assert_eq!(checked_batch_len::<u8>(usize::MAX, max / 3, 3, 3).unwrap(), max / 3 * 3);
+        assert_eq!(
+            checked_batch_len::<u8>(usize::MAX, max / 3, 3, 3).unwrap(),
+            max / 3 * 3
+        );
         assert!(checked_batch_len::<u8>(usize::MAX, max / 3 + 1, 3, 3).is_err());
         assert!(checked_batch_len::<f64>(usize::MAX, max / 24 + 1, 3, 3).is_err());
         assert!(checked_batch_len::<u8>(usize::MAX, usize::MAX / 4 + 1, 3, 4).is_err());
         assert!(checked_batch_len::<u8>(usize::MAX, usize::MAX, 4, 3).is_err());
     }
 }
-
 
 #[cfg(test)]
 mod bounded_allocation_tests {

@@ -10,6 +10,22 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Rust quality tools
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Formatting
+        run: |
+          cargo +stable fmt --all -- --check
+          cargo +stable fmt --manifest-path examples/Cargo.toml --all -- --check
+          cargo +stable fmt --manifest-path tools/icc-cli/Cargo.toml --all -- --check
+      - name: Strict Clippy
+        run: |
+          cargo +stable clippy --all-targets -- -D warnings
+          cargo +stable clippy --manifest-path examples/Cargo.toml --all-targets -- -D warnings
+          cargo +stable clippy --locked --manifest-path tools/icc-cli/Cargo.toml --all-targets -- -D warnings
   test:
     strategy:
       fail-fast: false

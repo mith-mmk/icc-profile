@@ -16,7 +16,10 @@ The independently locked `tools/cms-compare` harness is a manual black-box
 comparison tool, not a dependency of the library or normal PR tests. See
 manufacturer-cms-comparison.md for versions, licensing, and reproduction.
 
-Formatting and strict Clippy are not merge gates yet: existing legacy files
-have unrelated formatting/lint debt. Adding them requires a separate cleanup.
+A separate Linux stable job enforces `cargo fmt --all -- --check` and
+`cargo clippy --all-targets -- -D warnings` for the library, reader example,
+and standalone CLI. Legacy public constructor and inherent string-method
+signatures have narrow, documented lint exceptions to preserve compatibility.
+Manual comparison harnesses remain outside the normal CI gate.
 No CI workflow grants write permissions or publishes packages. The standalone CLI package is tested with its committed lockfile in every matrix job. Cargo.lock is intentionally not tracked
 for this library; CI exercises compatible dependency resolution on each toolchain.

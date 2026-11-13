@@ -34,7 +34,7 @@ fn profile(space: [u8; 4], pcs: [u8; 4], tags: Vec<([u8; 4], Vec<u8>)>) -> Vec<u
         put(&mut b, at, v);
     }
     for (i, (sig, data)) in tags.into_iter().enumerate() {
-        while b.len() % 4 != 0 {
+        while !b.len().is_multiple_of(4) {
             b.push(0);
         }
         let off = b.len();

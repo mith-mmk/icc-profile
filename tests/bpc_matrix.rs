@@ -11,8 +11,8 @@ fn put(b: &mut [u8], at: usize, v: u32) {
 fn xyz(v: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0; 20];
     b[..4].copy_from_slice(b"XYZ ");
-    for i in 0..3 {
-        put(&mut b, 8 + i * 4, (v[i] * 65536.0).round() as i32 as u32);
+    for (i, value) in v.iter().enumerate() {
+        put(&mut b, 8 + i * 4, (value * 65536.0).round() as i32 as u32);
     }
     b
 }
@@ -52,7 +52,7 @@ fn fixture(version: u8, values: &[u16], extra: Vec<([u8; 4], Vec<u8>)>) -> Vec<u
     put(&mut b, 76, 54061);
     put(&mut b, 128, tags.len() as u32);
     for (i, (sig, data)) in tags.into_iter().enumerate() {
-        while b.len() % 4 != 0 {
+        while !b.len().is_multiple_of(4) {
             b.push(0);
         }
         let at = b.len();
@@ -352,8 +352,8 @@ fn matrix_bpc_diagnostics_ties_caps_and_metadata_are_explicit() {
             assert!((estimate.capped_lstar() - l.min(50.0)).abs() < 2e-5);
             assert_eq!(estimate.was_capped(), l > 50.0);
             assert!((estimate.effective_y() - luminance(l.min(50.0))).abs() < 1e-7);
-            for i in 0..3 {
-                assert!((estimate.endpoint_xyz()[i] - WHITE[i] * y).abs() < 1e-7);
+            for (i, white) in WHITE.iter().enumerate() {
+                assert!((estimate.endpoint_xyz()[i] - white * y).abs() < 1e-7);
             }
         }
         let (scale, offset) = coefficients(&src, &dst);
@@ -466,8 +466,8 @@ fn chromatic_endpoint_black_uses_only_y_for_neutral_compensation() {
     }
     let (scale, offset) = coefficients(&[1000, 65535], &[6000, 65535]);
     assert!((info.scale() - scale).abs() < 1e-7);
-    for i in 0..3 {
-        assert!((info.offset()[i] - offset[i]).abs() < 1e-7);
+    for (i, value) in offset.iter().enumerate() {
+        assert!((info.offset()[i] - value).abs() < 1e-7);
     }
     let input = [0.2f32, 0.4, 0.7];
     let expected: [f32; 3] = std::array::from_fn(|i| {

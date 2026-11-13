@@ -145,8 +145,10 @@ fn profile_rejects_truncated_and_huge_inputs() {
         Profile::new(&[0; 128]),
         Err(TransformError::InvalidProfile(_))
     ));
-    let mut limits = ParseLimits::default();
-    limits.max_profile_size = 8;
+    let limits = ParseLimits {
+        max_profile_size: 8,
+        ..ParseLimits::default()
+    };
     assert!(matches!(
         Profile::from_bytes_with_limits(&synthetic_rgb_profile(), limits),
         Err(TransformError::ResourceLimit(_))
@@ -425,8 +427,10 @@ fn gray_transform_has_one_channel_and_rgb_to_gray_is_safe() {
 fn unsupported_intent_and_bpc_are_explicit_errors() {
     let bytes = synthetic_rgb_profile();
     let profile = Profile::new(&bytes).unwrap();
-    let mut options = TransformOptions::default();
-    options.rendering_intent = icc_profile::RenderingIntent::Perceptual;
+    let mut options = TransformOptions {
+        rendering_intent: icc_profile::RenderingIntent::Perceptual,
+        ..TransformOptions::default()
+    };
     assert!(matches!(
         Transform::new(&profile, &profile, options),
         Err(TransformError::UnsupportedProfileFeature(_))
@@ -463,7 +467,7 @@ fn absolute_transform_validates_selected_media_white() {
 
 #[test]
 fn xclr_signatures_accept_only_icc_hex_channel_counts() {
-    for lead in [b'2', b'9', b'A', b'F'] {
+    for lead in *b"29AF" {
         let mut bytes = synthetic_rgb_profile();
         put_u32(&mut bytes, 16, u32::from_be_bytes([lead, b'C', b'L', b'R']));
         let profile = Profile::new(&bytes).unwrap();
@@ -476,7 +480,7 @@ fn xclr_signatures_accept_only_icc_hex_channel_counts() {
             })
         );
     }
-    for lead in [b'1', b':', b'@', b'G'] {
+    for lead in *b"1:@G" {
         let mut bytes = synthetic_rgb_profile();
         put_u32(&mut bytes, 16, u32::from_be_bytes([lead, b'C', b'L', b'R']));
         assert!(matches!(
@@ -667,7 +671,8 @@ fn atomic_rgb_and_cross_channel_matrix_contracts() {
 fn benchmark_atomic_matrix() {
     let rgb = Profile::parse(&synthetic_rgb_profile()).unwrap();
     let gray = Profile::parse(&synthetic_gray_profile()).unwrap();
-    for (source, destination, label) in [(&gray, &gray, "Gray matrix"), (&rgb, &rgb, "RGB matrix")] {
+    for (source, destination, label) in [(&gray, &gray, "Gray matrix"), (&rgb, &rgb, "RGB matrix")]
+    {
         let transform = Transform::new(source, destination, TransformOptions::default()).unwrap();
         atomic_contract::benchmark_atomic(&transform, label);
     }

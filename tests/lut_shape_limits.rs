@@ -122,8 +122,10 @@ fn profile_parse_curve_limit_applies_to_selected_mab_and_mba_sets() {
         (*b"mBA ", TransformDirection::PcsToDevice, *b"B2A0"),
     ] {
         let bytes = profile_with_tag(tag_name, &rgb_mab_with_sampled_curves(signature));
-        let mut limited_parse = ParseLimits::default();
-        limited_parse.max_curve_entries = 16;
+        let limited_parse = ParseLimits {
+            max_curve_entries: 16,
+            ..ParseLimits::default()
+        };
         let limited = Profile::parse_with_limits(&bytes, limited_parse)
             .unwrap()
             .compile(
@@ -136,8 +138,10 @@ fn profile_parse_curve_limit_applies_to_selected_mab_and_mba_sets() {
             "32-entry curve bypassed profile parse limit for {signature:?}"
         );
 
-        let mut exact_parse = ParseLimits::default();
-        exact_parse.max_curve_entries = 32;
+        let exact_parse = ParseLimits {
+            max_curve_entries: 32,
+            ..ParseLimits::default()
+        };
         let exact = Profile::parse_with_limits(&bytes, exact_parse)
             .unwrap()
             .compile(

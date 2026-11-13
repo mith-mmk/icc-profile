@@ -20,9 +20,9 @@ fn curves_cover_parametric_functions() {
 fn matrix_inverse_roundtrip() {
     let m = [[0.4, 0.2, 0.1], [0.1, 0.7, 0.2], [0.0, 0.1, 0.9]];
     let inv = super::profile::invert(m).unwrap();
-    for row in 0..3 {
-        for col in 0..3 {
-            let got = (0..3).map(|k| m[row][k] * inv[k][col]).sum::<f32>();
+    for (row, values) in m.iter().enumerate() {
+        for (col, _) in inv[0].iter().enumerate() {
+            let got = (0..3).map(|k| values[k] * inv[k][col]).sum::<f32>();
             assert!((got - if row == col { 1.0 } else { 0.0 }).abs() < 1e-5);
         }
     }
@@ -40,7 +40,7 @@ fn sampled_inverse_uses_complete_equal_runs() {
 fn parametric_inverse_preserves_near_endpoint_plateau() {
     let curve = super::curve::Curve::Para {
         function: 1,
-        values: vec![1.0, 32767.0, -32766.984375],
+        values: vec![1.0, 32767.0, -32_766.984],
         direction: 1,
     };
     let values = match &curve {

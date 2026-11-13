@@ -33,7 +33,7 @@ fn profile(space: [u8; 4], pcs: [u8; 4], tags: Vec<([u8; 4], Vec<u8>)>) -> Vec<u
         put(&mut b, at, v);
     }
     for (i, (sig, data)) in tags.into_iter().enumerate() {
-        while b.len() % 4 != 0 {
+        while !b.len().is_multiple_of(4) {
             b.push(0);
         }
         let off = b.len();
@@ -407,8 +407,8 @@ fn cmyk_bpc_diagnostics_preserve_four_channels_and_current_algorithm() {
             let device = local_black(lab, tri);
             close(&info.device_black(), &device.map(|v| v as f32));
             let xyz = to_xyz(device, lab);
-            for i in 0..3 {
-                assert!((info.source_xyz()[i] - xyz[i]).abs() < 2e-6);
+            for (i, value) in xyz.iter().enumerate() {
+                assert!((info.source_xyz()[i] - value).abs() < 2e-6);
             }
             assert_eq!(info.auxiliary_route().selected_tag(), Some(*b"B2A0"));
             assert!(!info.auxiliary_route().used_fallback());
@@ -424,8 +424,8 @@ fn cmyk_bpc_diagnostics_preserve_four_channels_and_current_algorithm() {
             let scale = (1.0 - 2000.0 / 65535.0) / (1.0 - capped_y);
             assert!((info.effective_y() - capped_y).abs() < 2e-6);
             assert!((info.scale() - scale).abs() < 3e-6);
-            for i in 0..3 {
-                assert!((info.offset()[i] - (1.0 - scale) * W[i]).abs() < 3e-6);
+            for (i, white) in W.iter().enumerate() {
+                assert!((info.offset()[i] - (1.0 - scale) * white).abs() < 3e-6);
             }
         }
     }
@@ -524,8 +524,8 @@ fn cmyk_bpc_caps_high_luminance_probe_at_lstar50() {
             assert!((diagnostic.effective_y() - effective_y).abs() < 1e-12);
             let scale = (1.0 - 2000.0 / 65535.0) / (1.0 - effective_y);
             assert!((diagnostic.scale() - scale).abs() < 1e-7);
-            for i in 0..3 {
-                assert!((diagnostic.offset()[i] - (1.0 - scale) * W[i]).abs() < 1e-7);
+            for (i, white) in W.iter().enumerate() {
+                assert!((diagnostic.offset()[i] - (1.0 - scale) * white).abs() < 1e-7);
             }
             let mut output = [0.0; 3];
             t.transform_f32_atomic(&[0.8; 4], &mut output).unwrap();

@@ -487,14 +487,15 @@ pub(super) fn output_estimate(
                 return Err(invalid());
             }
             let divisor = a[c][c];
-            for j in c..4 {
-                a[c][j] /= divisor;
+            for value in &mut a[c][c..] {
+                *value /= divisor;
             }
-            for r in 0..3 {
+            let pivot_row = a[c];
+            for (r, row) in a.iter_mut().enumerate() {
                 if r != c {
-                    let factor = a[r][c];
-                    for j in c..4 {
-                        a[r][j] -= factor * a[c][j];
+                    let factor = row[c];
+                    for (value, pivot_value) in row[c..].iter_mut().zip(&pivot_row[c..]) {
+                        *value -= factor * pivot_value;
                     }
                 }
             }

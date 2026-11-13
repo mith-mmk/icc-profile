@@ -1,16 +1,14 @@
-/// Integration tests: 色空間変換関数の数値検証
-///
-/// テスト対象:
-/// - RGB ↔ XYZ (sRGB D65 行列)
-/// - XYZ ↔ L*a*b* (D65 白色点)
-/// - YUV(YCbCr) ↔ RGB (BT.601)
-/// - WhitePoint 各標準値
+//! Integration tests: 色空間変換関数の数値検証
+//!
+//! テスト対象:
+//! - RGB ↔ XYZ (sRGB D65 行列)
+//! - XYZ ↔ L*a*b* (D65 白色点)
+//! - YUV(YCbCr) ↔ RGB (BT.601)
+//! - WhitePoint 各標準値
 
 use icc_profile::cms::transration::{
-    lab_to_xyz, lab_to_xyz_wp,
-    rgb_to_xyz, rgb_to_xyz_from_f64,
-    xyz_to_lab, xyz_to_lab_wp, xyz_to_rgb,
-    yuv_to_rgb, yuv_to_rgb_with_mode, YUVToRGBCoefficient, WhitePoint,
+    lab_to_xyz, lab_to_xyz_wp, rgb_to_xyz, rgb_to_xyz_from_f64, xyz_to_lab, xyz_to_lab_wp,
+    xyz_to_rgb, yuv_to_rgb, yuv_to_rgb_with_mode, WhitePoint, YUVToRGBCoefficient,
 };
 
 // 浮動小数点の近似比較ヘルパー (絶対誤差)
@@ -22,7 +20,10 @@ fn assert_approx(label: &str, got: f64, expected: f64, tol: f64) {
     assert!(
         approx(got, expected, tol),
         "{}: expected {:.6}, got {:.6} (tol={:.6})",
-        label, expected, got, tol
+        label,
+        expected,
+        got,
+        tol
     );
 }
 
@@ -99,9 +100,24 @@ fn rgb_xyz_rgb_roundtrip() {
     for &(r0, g0, b0) in &[(128u8, 64, 192u8), (200u8, 100, 0u8), (50u8, 200, 50u8)] {
         let (x, y, z) = rgb_to_xyz(r0, g0, b0);
         let (r1, g1, b1) = xyz_to_rgb(x, y, z);
-        assert!((r0 as i32 - r1 as i32).abs() <= 2, "R roundtrip: {} → {}", r0, r1);
-        assert!((g0 as i32 - g1 as i32).abs() <= 2, "G roundtrip: {} → {}", g0, g1);
-        assert!((b0 as i32 - b1 as i32).abs() <= 2, "B roundtrip: {} → {}", b0, b1);
+        assert!(
+            (r0 as i32 - r1 as i32).abs() <= 2,
+            "R roundtrip: {} → {}",
+            r0,
+            r1
+        );
+        assert!(
+            (g0 as i32 - g1 as i32).abs() <= 2,
+            "G roundtrip: {} → {}",
+            g0,
+            g1
+        );
+        assert!(
+            (b0 as i32 - b1 as i32).abs() <= 2,
+            "B roundtrip: {} → {}",
+            b0,
+            b1
+        );
     }
 }
 
@@ -182,9 +198,24 @@ fn lab_xyz_lab_roundtrip() {
     ] {
         let (x, y, z) = lab_to_xyz_wp(l0, a0, b0, &wp);
         let (l1, a1, b1) = xyz_to_lab_wp(x, y, z, &wp);
-        assert_approx(&format!("L* roundtrip for ({},{},{})", l0, a0, b0), l1, l0, 0.01);
-        assert_approx(&format!("a* roundtrip for ({},{},{})", l0, a0, b0), a1, a0, 0.01);
-        assert_approx(&format!("b* roundtrip for ({},{},{})", l0, a0, b0), b1, b0, 0.01);
+        assert_approx(
+            &format!("L* roundtrip for ({},{},{})", l0, a0, b0),
+            l1,
+            l0,
+            0.01,
+        );
+        assert_approx(
+            &format!("a* roundtrip for ({},{},{})", l0, a0, b0),
+            a1,
+            a0,
+            0.01,
+        );
+        assert_approx(
+            &format!("b* roundtrip for ({},{},{})", l0, a0, b0),
+            b1,
+            b0,
+            0.01,
+        );
     }
 }
 
@@ -221,9 +252,24 @@ fn yuv_rgb_roundtrip() {
     for &(r0, g0, b0) in &[(200u8, 50, 80), (100u8, 200, 30), (128u8, 128, 128)] {
         let (y, cb, cr) = rgb_to_yuv(r0, g0, b0);
         let (r1, g1, b1) = yuv_to_rgb(y, cb, cr);
-        assert!((r0 as i32 - r1 as i32).abs() <= 2, "R roundtrip: {} → {}", r0, r1);
-        assert!((g0 as i32 - g1 as i32).abs() <= 2, "G roundtrip: {} → {}", g0, g1);
-        assert!((b0 as i32 - b1 as i32).abs() <= 2, "B roundtrip: {} → {}", b0, b1);
+        assert!(
+            (r0 as i32 - r1 as i32).abs() <= 2,
+            "R roundtrip: {} → {}",
+            r0,
+            r1
+        );
+        assert!(
+            (g0 as i32 - g1 as i32).abs() <= 2,
+            "G roundtrip: {} → {}",
+            g0,
+            g1
+        );
+        assert!(
+            (b0 as i32 - b1 as i32).abs() <= 2,
+            "B roundtrip: {} → {}",
+            b0,
+            b1
+        );
     }
 }
 
@@ -233,8 +279,12 @@ fn yuv_consistency_bt601_vs_bt709() {
     let (r601, _, _) = yuv_to_rgb(100, 100, 200);
     let (r709, _, _) = yuv_to_rgb_with_mode(100, 100, 200, &YUVToRGBCoefficient::Bt709);
     // Cr=200 → offset後 72。crr の差 (0.1728) で ≥ 12 の差がある
-    assert!((r601 as i32 - r709 as i32).abs() >= 10,
-        "BT.601({}) and BT.709({}) should differ for non-neutral chroma", r601, r709);
+    assert!(
+        (r601 as i32 - r709 as i32).abs() >= 10,
+        "BT.601({}) and BT.709({}) should differ for non-neutral chroma",
+        r601,
+        r709
+    );
 }
 
 // ===========================================================================
@@ -281,7 +331,11 @@ fn delta_e76_identical_colors() {
     use icc_profile::utils::delta_e76;
     let lab = (50.0, 10.0, 20.0);
     let de = delta_e76(&lab, &lab);
-    assert!(de < 0.001, "Identical colors should have ΔE ≈ 0, got {}", de);
+    assert!(
+        de < 0.001,
+        "Identical colors should have ΔE ≈ 0, got {}",
+        de
+    );
 }
 
 #[test]
@@ -336,7 +390,11 @@ fn ciede2000_identical_colors() {
     use icc_profile::utils::ciede2000;
     let lab = (50.0, 10.0, -20.0);
     let de = ciede2000(&lab, &lab);
-    assert!(de < 0.001, "Identical colors should have ΔE00 ≈ 0, got {}", de);
+    assert!(
+        de < 0.001,
+        "Identical colors should have ΔE00 ≈ 0, got {}",
+        de
+    );
 }
 
 #[test]

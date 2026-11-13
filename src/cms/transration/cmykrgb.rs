@@ -206,24 +206,24 @@ pub fn rgb_to_cmyk_from_profile(
                         .expect("Invalid legacy profile LUT8");
                 }
             }
-            Some(Data::Lut16(lut)) => {
+            Some(Data::Lut16(lut))
                 if historical_reverse_node_present(
                     lab,
                     lut.number_of_clut_grid_points,
                     lut.clut_values.len(),
                     true,
-                ) {
-                    let input = checked_legacy_lab_bytes(lab)
-                        .expect("Non-finite legacy profile color bridge");
-                    let (c, m, y, k) = try_d3_to_d4_lut16(input[0], input[1], input[2], lut)
-                        .expect("Invalid legacy profile LUT16");
-                    return (
-                        (c / 257.0).round() as u8,
-                        (m / 257.0).round() as u8,
-                        (y / 257.0).round() as u8,
-                        (k / 257.0).round() as u8,
-                    );
-                }
+                ) =>
+            {
+                let input =
+                    checked_legacy_lab_bytes(lab).expect("Non-finite legacy profile color bridge");
+                let (c, m, y, k) = try_d3_to_d4_lut16(input[0], input[1], input[2], lut)
+                    .expect("Invalid legacy profile LUT16");
+                return (
+                    (c / 257.0).round() as u8,
+                    (m / 257.0).round() as u8,
+                    (y / 257.0).round() as u8,
+                    (k / 257.0).round() as u8,
+                );
             }
             _ => {}
         }

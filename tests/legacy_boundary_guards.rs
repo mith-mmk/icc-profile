@@ -78,10 +78,10 @@ fn all_simple_batches_check_overflow_short_empty_and_surplus_input() {
                 );
             }
             assert!($function(&[], 0, &mode).unwrap().is_empty());
-            assert!($function(&vec![0; $input - 1], 1, &mode).is_err());
-            let exact = $function(&vec![32; $input], 1, &mode).unwrap();
+            assert!($function(&[0; $input - 1], 1, &mode).is_err());
+            let exact = $function(&[32; $input], 1, &mode).unwrap();
             assert_eq!(exact.len(), $output);
-            assert_eq!(exact, $function(&vec![32; $input + 7], 1, &mode).unwrap());
+            assert_eq!(exact, $function(&[32; $input + 7], 1, &mode).unwrap());
         }};
     }
     check!(rgb_to_xyz_entries_f64, RGBToXYZCoefficient::SrgbD65, 3, 3);

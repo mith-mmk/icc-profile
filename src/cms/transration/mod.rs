@@ -4,7 +4,7 @@
 //! - XYZ <--> L*a*b     It need XYZ white point(default d65)
 //! - L*a*b <--> CMYK    But it must need YCMK color space ICC Profile.
 //! - CMYK --> RGB
-//! 
+//!
 //! # Color space transrator entries
 //! There functions trunsrat color space,number of entry pixels.
 //! Buffer size is larger than entries * sample per pixels(RGB=3,CMYK=4)

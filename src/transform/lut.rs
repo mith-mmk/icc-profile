@@ -756,8 +756,8 @@ impl Clut {
                     };
                     index = index * self.grid[axis] + lower[axis] + upper;
                 }
-                for channel in 0..self.channels {
-                    output[channel] += weight * self.values[index * self.channels + channel];
+                for (channel, value) in output[..self.channels].iter_mut().enumerate() {
+                    *value += weight * self.values[index * self.channels + channel];
                 }
             }
             // Table entries and weights are normalized. A convex combination
@@ -811,8 +811,8 @@ impl Clut {
                     weight *= if upper == 0 { 1.0 - f[axis] } else { f[axis] };
                 }
                 let index = self.index(point) * self.channels;
-                for channel in 0..self.channels {
-                    output[channel] += weight * self.values[index + channel];
+                for (channel, value) in output[..self.channels].iter_mut().enumerate() {
+                    *value += weight * self.values[index + channel];
                 }
             }
             for value in output.iter_mut().take(self.channels) {

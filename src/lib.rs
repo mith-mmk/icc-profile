@@ -43,10 +43,10 @@
 
 pub use crate::iccprofile::*;
 pub mod cms;
-pub mod icc;
-pub mod simple;
 mod color_diff;
+pub mod icc;
 pub mod iccprofile;
+pub mod simple;
 pub mod transform;
 pub mod utils;
 

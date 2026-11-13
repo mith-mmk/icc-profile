@@ -6,11 +6,15 @@
 //!
 //! # ICC quickstart
 //! ```
-//! use icc_profile::icc::{Profile, Transform, TransformError, TransformOptions};
+//! use icc_profile::icc::{Profile, RenderingIntent, Transform, TransformError, TransformOptions};
 //! fn convert(src: &[u8], dst: &[u8], rgb: &[f32]) -> Result<Vec<f32>, TransformError> {
 //!     let src = Profile::parse(src)?;
 //!     let dst = Profile::parse(dst)?;
-//!     let transform = Transform::new(&src, &dst, TransformOptions::default())?;
+//!     let options = TransformOptions {
+//!         rendering_intent: RenderingIntent::RelativeColorimetric,
+//!         ..TransformOptions::default()
+//!     };
+//!     let transform = Transform::new(&src, &dst, options)?;
 //!     transform.transform_f32_vec(rgb)
 //! }
 //! ```

@@ -31,6 +31,11 @@ Host: macOS arm64, Rust 1.97.0. No Windows, Linux, wasm or MSRV claim.
 - `cargo test --offline`: 365 passed, zero failures, 70 ignored. Some legacy
   external-fixture tests self-skip when their files are absent; this is not
   exhaustive real-profile coverage.
+- Additional CI-equivalent local checks pass: `cargo test --all-targets`,
+  locked standalone `tools/icc-cli` tests and `examples/Cargo.toml` check.
+  No GitHub Actions run is attached to the pushed work-branch SHA: this
+  repository triggers push CI only for main/0.1.0 (or for a pull request).
+  Cross-platform CI therefore remains pending, not passed.
 - Both new inverse-search tests also pass in release mode. Frozen old-search
   bit comparisons cover all five functions, increasing/decreasing curves,
   lower/upper plateaus, discontinuities, out-of-range and tiny finite targets,

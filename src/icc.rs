@@ -4,7 +4,7 @@
 //! signatures, type identity and [`TransformError`] variants are unchanged.
 //!
 //! Start with [`Profile::parse`] (checked container validation), then
-//! [`Transform::new`] for a source/destination pair or [`CompiledProfile::compile`]
+//! [`Transform::new`] for a source/destination pair or [`Profile::compile`]
 //! for one selected direction. Parsing does not promise that every direction or
 //! optional feature can be compiled. `Profile::new` and `from_bytes` retain their
 //! older eager semantic checks and are not aliases for the new parse workflow.

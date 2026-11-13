@@ -119,3 +119,41 @@ fn invalid_parameters_are_rejected_even_for_empty_input() {
         assert!(result.unwrap().is_empty());
     }
 }
+
+#[test]
+fn d65_matrix_preserves_unclipped_white_xyz() {
+    // The built-in matrix is applied directly, with no adaptation or clipping.
+    let xyz = linear_rgb_f64_to_xyz_f64([1.; 3], &ColorMatrix3D::d65_rgb_to_xyz()).unwrap();
+    near(xyz, [0.950456, 1.0, 1.089058], 1e-12);
+    assert!(xyz[2] > 1.);
+}
+
+#[test]
+fn reverse_bt709_buffer_matches_every_scalar_pixel() {
+    let input = [0, 128, 128, 255, 255, 255, 90, 10, 240, 170, 190, 25];
+    let output = ycbcr8_full_to_rgb8_buffer(&input, YcbcrCoefficients::Bt709).unwrap();
+    assert_eq!(output.len(), input.len());
+    for (pixel, converted) in input.chunks_exact(3).zip(output.chunks_exact(3)) {
+        assert_eq!(converted, ycbcr8_full_to_rgb8([pixel[0], pixel[1], pixel[2]], YcbcrCoefficients::Bt709));
+    }
+}
+
+#[test]
+fn all_float_buffers_reject_late_nonfinite_samples() {
+    let matrix = identity();
+    let white = WhitePoint::new(1., 1., 1.);
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for channel in 0..3 {
+            let mut input = [0.; 6];
+            input[3 + channel] = value;
+            for result in [
+                linear_rgb_f64_to_xyz_f64_buffer(&input, &matrix),
+                xyz_f64_to_linear_rgb_f64_buffer(&input, &matrix),
+                xyz_f64_to_lab_f64_buffer(&input, &white),
+                lab_f64_to_xyz_f64_buffer(&input, &white),
+            ] {
+                assert!(matches!(result, Err(SimpleError::NonFiniteInput)));
+            }
+        }
+    }
+}

@@ -15,6 +15,9 @@
 //! Callers choose matching matrix directions, XYZ scales, and whitepoints.
 //! There is no automatic matrix inversion, chromatic adaptation, transfer curve,
 //! gamut mapping, alpha processing, or CMYK interpretation.
+//! Reexported `ColorMatrix3D` and `WhitePoint` retain legacy utilities, including
+//! unchecked methods; the guarantees above apply to this module's conversion
+//! functions, not to every method on those reexported types.
 
 use crate::cms::transration::{
     rgb_to_yuv_with_mode, try_lab_to_xyz_wp, try_xyz_to_lab_wp, yuv_to_rgb_with_mode,

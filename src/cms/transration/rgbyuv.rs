@@ -217,6 +217,9 @@ pub fn rgb_to_yuv_entries(buf: &[u8], entries: usize, mode: &RGBToYUVCoefficient
 
 /// Convert RGBA pixel buffer to YUV
 ///
+/// This historical name is reversed: the function converts RGBA to YCbCr and
+/// discards alpha. Prefer the correctly named [`rgba_to_yuv_entries`] alias.
+///
 /// Processes RGBA input (with alpha channel) and outputs YUV triplets,
 /// effectively extracting RGB and converting to YUV.
 /// Input format: [R1, G1, B1, A1, R2, G2, B2, A2, ...]
@@ -259,4 +262,13 @@ pub fn yuv_to_rgba_entries_from_rgb(buf: &[u8], entries: usize, mode: &RGBToYUVC
 
 
     Ok(buffer)
+}
+
+/// Convert packed RGBA bytes to full-range YCbCr triplets, discarding alpha.
+///
+/// This correctly named alias preserves [`yuv_to_rgba_entries_from_rgb`],
+/// including its coefficient presets, rounding, clipping and error behavior.
+/// Input is `[R, G, B, A, ...]`, output is `[Y, Cb, Cr, ...]`.
+pub fn rgba_to_yuv_entries(buf: &[u8], entries: usize, mode: &RGBToYUVCoefficient) -> Result<Vec<u8>> {
+    yuv_to_rgba_entries_from_rgb(buf, entries, mode)
 }

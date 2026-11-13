@@ -51,9 +51,9 @@ fn convert(source_icc: &[u8], destination_icc: &[u8], input: &[f32])
             ..TransformOptions::default()
         },
     )?;
-    let mut output = vec![0.0; input.len()];
-    transform.transform_f32(input, &mut output)?;
-    Ok(output)
+    // Input and output channel counts can differ (for example RGB to CMYK).
+    // The allocating helper validates complete pixels and sizes output correctly.
+    Ok(transform.transform_f32_vec(input)?)
 }
 ```
 
@@ -147,7 +147,8 @@ must remain unchanged on error. Existing f32 execution stays one-pass and may
 partially update on a late error; existing integer execution is already
 transactional. The f32 atomic variant uses two evaluation passes and fixed
 768-byte chunk scratch, not an image-sized temporary. Single-pixel
-`CompiledProfile::transform_f32_atomic` uses one evaluation and 12-byte scratch.
+`CompiledProfile::transform_f32_atomic` uses one evaluation and 16-byte scratch
+(up to four output components).
 These are output transactions, not synchronization or panic rollback.
 See [the execution contract](docs/cms-0.1.0-plan.md#borrowed-output-transaction-contract)
 for memory, compatibility and error guarantees.
@@ -158,7 +159,9 @@ The checked transform API now accepts v2 CMYK `mft2` and v4 CMYK `mAB` A2B stage
 colorimetric, and saturation display conversion to RGB (or a standalone DeviceToPcs stage).
 Samples are C/M/Y/K, 0 = no ink and 1 = maximum ink; u8/u16 scale to that range.
 Format-specific inversion and YCCK belong to callers. PCS remains D50 XYZ/Lab.
-CMYK output and other CMYK tag types remain unsupported. Absolute display is limited to the separately documented printer-to-D50-matrix route.
+CMYK output is supported only by the bounded B2A routes described below; other
+CMYK tag types remain unsupported. Absolute display is limited to the separately
+documented printer-to-D50-matrix route.
 
 The 4D CLUT uses all 16 hypercube corners with multilinear interpolation.
 Existing 1D/3D interpolation is unchanged. CMYK mft2 matrices must be identity.
@@ -258,3 +261,10 @@ estimate. See [CMYK output BPC](docs/cmyk-output-bpc.md) for scope and validatio
 Legacy scalar LUT helpers have additive `try_` variants returning `std::io::Result`.
 Use these for malformed-payload error handling; original scalar signatures retain
 explicit panic behavior. See [migration, units, and route limits](docs/legacy-lut-checked.md).
+## Standalone legacy color helpers
+
+The profile-free helpers under `cms::transration` are separate from the checked
+`Transform` API above. RGB/XYZ helpers are matrix-only linear-light operations,
+not sRGB transfer functions or a full ICC pipeline. Their byte encodings, RGBA
+layouts and compatibility limits are described in
+[the standalone helper contracts](docs/standalone-color-contracts.md).

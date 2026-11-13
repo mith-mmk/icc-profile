@@ -1,3 +1,9 @@
+//! Matrix-only XYZ to linear RGB conversion, with no RGB transfer function.
+//!
+//! `SrgbD65` names the matrix, not an sRGB OETF. Float RGB is unbounded linear
+//! output; byte RGB clips to 0..255. Byte XYZ uses the simplified 0..1 scale
+//! mapped to 0..255, not ICC PCS XYZ encoding. No whitepoint adaptation occurs.
+//!
 //! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
 //! results with `InvalidInput`; finite outputs retain their existing clipping.
 //! Output reservation failures are returned as errors.
@@ -79,6 +85,12 @@ pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) 
     Ok(buffer)
 }
 
+/// Convert legacy XYZx records to linear RGBA bytes with opaque alpha.
+///
+/// Each input pixel occupies **four** bytes: `[X, Y, Z, ignored, ...]`.
+/// The fourth byte is discarded, not copied as alpha; output alpha is 255.
+/// This compatibility API does not accept packed XYZ triplets. Use
+/// [`xyz_to_rgb_entries`] for packed three-byte XYZ input and RGB output.
 pub fn xyz_to_rgba_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) -> Result<Vec<u8>> {
     let output_len = checked_batch_len::<u8>(buf.len(), entries, 4, 4)?;
     let matrix = mode.get();

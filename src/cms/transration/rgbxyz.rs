@@ -1,3 +1,12 @@
+//! Matrix-only conversion from linear RGB to XYZ.
+//!
+//! `SrgbD65` selects primaries and reference white, not the sRGB transfer
+//! function. Decode encoded RGB before calling; no EOTF, TRC or chromatic
+//! adaptation is applied. Float RGB uses normalized linear components; byte
+//! RGB represents linear components scaled by 255. Float XYZ is not clamped.
+//! Byte XYZ uses a simplified 0..1 scale mapped to 0..255, truncates and clips
+//! larger values (including D65 white Z). It is not ICC PCS XYZ encoding.
+//!
 //! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
 //! results with `InvalidInput`; finite outputs retain their existing clipping.
 //! Output reservation failures are returned as errors.

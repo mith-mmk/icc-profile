@@ -209,7 +209,11 @@ impl ICCProfile {
 pub trait ICCNumber {
     fn as_f32(&self) -> f32;
     fn as_f64(&self) -> f64;
+    /// Floor of the represented number (also for negative values).
     fn int(&self) -> i32;
+    /// Raw fractional field, not a decimal-digit string.
+    /// For compatibility, U1Fixed15Number returns its entire stored 16-bit word,
+    /// including the integer bit; mask with 0x7fff for only its fractional bits.
     fn decimal(&self) -> u32;
 }
 
@@ -220,16 +224,36 @@ pub struct S15Fixed16Number {
 }
 
 impl S15Fixed16Number {
+    /// Encode finite values in [-32768, 32767 + 65535/65536], rounding
+    /// toward negative infinity to the next representable 16-bit fraction.
+    ///
+    /// Outside that range this retains the legacy cast-based behavior: the
+    /// floored integer saturates to i16 and the fractional part is multiplied
+    /// by 65535 and cast to u16 (NaN becomes zero). This is not range validation;
+    /// use [`Self::checked_new`] when input may be invalid.
     pub fn new(val: f64) -> Self {
+        if let Some(number) = Self::checked_new(val) {
+            return number;
+        }
         let integer = val.floor() as i16;
         let decimal = ((val - val.floor()) * u16::MAX as f64) as u16;
         S15Fixed16Number { integer, decimal }
     }
+
+    /// Encode a finite value in the exact representable range, or return None.
+    /// Quantization is floor(value * 65536), including for negative fractions.
+    pub fn checked_new(val: f64) -> Option<Self> {
+        if !val.is_finite() || val < -32768.0 || val > i32::MAX as f64 / 65536.0 {
+            return Option::None;
+        }
+        let raw = (val * 65536.0).floor() as i32;
+        Some(Self { integer: (raw >> 16) as i16, decimal: raw as u16 })
+    }
 }
 
 impl ICCNumber for S15Fixed16Number {
-    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / u16::MAX as f32 }
-    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / u16::MAX as f64 }
+    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / 65536.0 }
+    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / 65536.0 }
     fn int(&self) -> i32 { self.integer as i32 }
     fn decimal(&self) -> u32 { self.decimal as u32}
 }
@@ -241,8 +265,8 @@ pub struct U16Fixed16Number {
 }
 
 impl ICCNumber for U16Fixed16Number {
-    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / u16::MAX as f32 }
-    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / u16::MAX as f64 }
+    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / 65536.0 }
+    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / 65536.0 }
     fn int(&self) -> i32 { self.integer as i32 }
     fn decimal(&self) -> u32 { self.decimal as u32}
 }
@@ -253,9 +277,9 @@ pub struct U1Fixed15Number {
 }
 
 impl ICCNumber for U1Fixed15Number {
-    fn as_f32(&self) -> f32 { self.decimal as f32 / i16::MAX as f32 }
-    fn as_f64(&self) -> f64 { self.decimal as f64 / i16::MAX as f64 }
-    fn int(&self) -> i32 { 0 }
+    fn as_f32(&self) -> f32 { self.decimal as f32 / 32768.0 }
+    fn as_f64(&self) -> f64 { self.decimal as f64 / 32768.0 }
+    fn int(&self) -> i32 { (self.decimal >> 15) as i32 }
     fn decimal(&self) -> u32 { self.decimal as u32}
 }
 
@@ -266,11 +290,15 @@ pub struct U8Fixed8Number {
 }
 
 impl ICCNumber for U8Fixed8Number {
-    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / u8::MAX as f32 }
-    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / u8::MAX as f64  }
+    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / 256.0 }
+    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / 256.0  }
     fn int(&self) -> i32 { self.integer as i32 }
     fn decimal(&self) -> u32 { self.decimal as u32}
 }
+
+#[cfg(test)]
+#[path = "legacy_fixed_point_tests.rs"]
+mod legacy_fixed_point_tests;
 
 #[derive(Debug)]
 pub struct XYZNumber {

@@ -18,10 +18,10 @@ are preserved and do not describe this release.
 
 - [x] Set library version to 0.1.0 and synchronize tracked tool lockfiles.
 - [x] Update README, changelog and minimum-Rust contribution guidance.
-- [ ] macOS stable: all-target tests, doc tests, reader example, locked CLI tests.
-- [ ] macOS Rust 1.91.0: all-target and doc tests.
-- [ ] Clean-commit `cargo package --locked` and `cargo publish --dry-run --locked`.
-- [ ] Compare full-tree formatting/strict Clippy with the source candidate.
+- [x] macOS stable: all-target tests, doc tests, reader example, locked CLI tests.
+- [x] macOS Rust 1.91.0: all-target and doc tests.
+- [x] Clean-commit `cargo package --locked` and `cargo publish --dry-run --locked`.
+- [x] Compare full-tree formatting/strict Clippy with the source candidate.
 - [ ] Verify pushed branch SHA and cross-platform CI for that exact SHA.
 - [ ] Owner-authorized merge/publication, registry version/checksum verification.
 - [ ] Only after ICC publication: update and verify downstream WML2.
@@ -49,3 +49,23 @@ the final pushed SHA. Dry-run never uploads the crate. External profiles and
 opt-in comparisons are not rerun by these normal gates; refer to the existing
 [TRC](inverse-trc-validation-20261114.md) and
 [ColorSync](colorsync-intents-validation-20261114.md) evidence for their scope.
+
+## Local verification record (2026-11-14, macOS arm64)
+
+On preparation commit `570756821e4152939f61ebe3c46d13cc05395ec2`:
+
+- Stable Rust 1.97.0 and MSRV 1.91.0 each: 362 all-target tests passed,
+  zero failed, 62 ignored; doc tests: 3 passed, 8 ignored.
+- Stable reader example check passed; locked CLI tests: 8 passed, zero failed.
+- Clean-commit package and publish dry-run passed; upload explicitly aborted
+  due to dry-run. This did not publish or merge anything.
+- Full-tree format check fails identically to source candidate 3087ec3 after
+  normalizing the worktree path. Strict Clippy fails with the same 97 errors
+  and identical error-heading list. No library or test source is changed here.
+- The preparation commit was pushed and its remote SHA matched. Subsequent
+  checklist-only edits require a final-SHA CI run and clean-package recheck.
+
+No external-profile tests, performance benchmarks or ColorSync comparisons were
+rerun for this metadata-only release preparation. Cross-platform results must be
+read from the exact final commit's Actions run, not inferred from local tests or
+from an older successful run. Final publication and downstream steps remain open.

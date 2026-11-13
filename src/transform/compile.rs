@@ -156,10 +156,16 @@ impl CompiledProfile {
     /// Evaluation errors may partially update output; use `transform_f32_atomic`
     /// when unchanged output on error is required.
     pub fn transform_f32(&self, input: &[f32], output: &mut [f32]) -> Result<(), TransformError> {
-        if input.len() != self.0.input_channels || output.len() != self.0.output_channels {
+        if input.len() != self.0.input_channels {
             return Err(TransformError::InvalidBufferLength {
                 expected: self.0.input_channels,
                 actual: input.len(),
+            });
+        }
+        if output.len() != self.0.output_channels {
+            return Err(TransformError::InvalidBufferLength {
+                expected: self.0.output_channels,
+                actual: output.len(),
             });
         }
         if input.iter().any(|value| !value.is_finite()) {

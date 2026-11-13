@@ -13,9 +13,9 @@ pub fn lab_to_xyz_wp(l:f64,a:f64,b:f64,wp: &WhitePoint) -> (f64,f64,f64) {
     let fx =  fy + (a /500.0);
     let fz =  fy - (b /200.0);
 
-    let x =  if fy > th {fx.powi(3) * wp.x} else {ti * (fx - 4.0/29.0) * wp.x };
+    let x =  if fx > th {fx.powi(3) * wp.x} else {ti * (fx - 4.0/29.0) * wp.x };
     let y =  if fy > th {fy.powi(3) * wp.y} else {ti * (fy - 4.0/29.0) * wp.y };
-    let z =  if fy > th {fz.powi(3) * wp.z} else {ti * (fz - 4.0/29.0) * wp.z };
+    let z =  if fz > th {fz.powi(3) * wp.z} else {ti * (fz - 4.0/29.0) * wp.z };
 
     (x,y,z)
 }
@@ -23,11 +23,12 @@ pub fn lab_to_xyz_wp(l:f64,a:f64,b:f64,wp: &WhitePoint) -> (f64,f64,f64) {
 
 // xyz =0.0-1.0
 pub fn lab_to_xyz_entries_f64(buf:&[f64],entries: usize,wp: &WhitePoint)  -> Result<Vec<f64>> {
-    if buf.len() < entries *3 {
+    let required = entries.checked_mul(3).ok_or_else(||
+        Error::new(ErrorKind::InvalidInput, "Entry count overflow"))?;
+    if buf.len() < required {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
     }
-    let index = (entries / 3) as usize;
-    let mut buffer = Vec::with_capacity(index * 3);
+    let mut buffer = Vec::with_capacity(required);
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -48,11 +49,12 @@ pub fn lab_to_xyz_entries_f64(buf:&[f64],entries: usize,wp: &WhitePoint)  -> Res
 // lab 0-255 / xyz = 0-255
 
 pub fn lab_to_xyz_entries(buf:&[u8],entries: usize,wp: &WhitePoint)  -> Result<Vec<u8>> {
-    if buf.len() < entries *3 {
+    let required = entries.checked_mul(3).ok_or_else(||
+        Error::new(ErrorKind::InvalidInput, "Entry count overflow"))?;
+    if buf.len() < required {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
     }
-    let index = (entries / 3) as usize;
-    let mut buffer = Vec::with_capacity(index * 3);
+    let mut buffer = Vec::with_capacity(required);
 
     for i in 0..entries {
         let ptr = i * 3;

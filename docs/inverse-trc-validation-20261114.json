@@ -1,0 +1,67 @@
+{
+  "base": "5d145f60365c731b18c39469a182825f4d4808cd",
+  "profiles": [
+    {
+      "name": "ITU-709.icc",
+      "sha256": "c6f7fab7a70c5236059813295f05eb5fbf3d6f5a03335fbf1b548fce430b035b"
+    },
+    {
+      "name": "Generic RGB Profile.icc",
+      "sha256": "49429d4dd70f439f6fa47a298e5ffbd280375d2cbd18708b1e05a34aafe5d219"
+    },
+    {
+      "name": "ITU-2020.icc",
+      "sha256": "cbbe4e27855cdc4af796895db3c99c52bd1a727b70fdd458168d3ae570250a03"
+    },
+    {
+      "name": "sRGB Profile.icc",
+      "sha256": "2b3aa1645779a9e634744faf9b01e9102b0c9b88fd6deced7934df86b949af7e"
+    },
+    {
+      "name": "ROMM RGB.icc",
+      "sha256": "bf6680b188c0fb882e6094ea5d5ac94cc13cca6f252a98bed1be855c58bb616a"
+    },
+    {
+      "name": "AdobeRGB1998.icc",
+      "sha256": "304f569a83c1e5eddaddac54e99ed03339333db013738bb499ab64f049887e28"
+    },
+    {
+      "name": "Display P3.icc",
+      "sha256": "0ff6958f98684c61f6bbdce1368ddeaf3873baf84545baba482e920d92a914c0"
+    },
+    {
+      "name": "reference.icc",
+      "sha256": "4855b8fabb96bdc6495d45d089bb8c8efb1ae18389e0dc9e75a5f701a9c0b662"
+    }
+  ],
+  "combinations_attempted": 224,
+  "supported": 156,
+  "unsupported_unchanged": 68,
+  "pixels_per_supported_combination": 4096,
+  "representations": [
+    "u8",
+    "u16",
+    "f32"
+  ],
+  "output_files_compared": 468,
+  "different_files": 0,
+  "real_image_pngs_compared": 5,
+  "different_pngs": 0,
+  "colorsync_saved_reference": {
+    "candidate-perceptual": {
+      "max_codes": 48,
+      "mean_codes": 15.812266666666666,
+      "matches_old": true
+    },
+    "candidate-saturation": {
+      "max_codes": 48,
+      "mean_codes": 15.812266666666666,
+      "matches_old": true
+    },
+    "candidate-relative": {
+      "max_codes": 1,
+      "mean_codes": 0.3712,
+      "matches_old": true
+    }
+  }
+}

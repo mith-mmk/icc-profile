@@ -93,31 +93,85 @@ pub(super) fn inverse_curve(curve: &Curve, y: f32) -> f32 {
         Curve::Para { direction, .. } => {
             let direction = *direction as f32;
             let target = y * direction;
-            let mut lower_lo = 0.0;
-            let mut lower_hi = 1.0;
-            let mut upper_lo = 0.0;
-            let mut upper_hi = 1.0;
-            for _ in 0..32 {
-                let lower_mid = (lower_lo + lower_hi) * 0.5;
-                if curve.eval_unclamped(lower_mid) * direction < target {
-                    lower_lo = lower_mid;
+            // The endpoint policy determines which bound is needed before
+            // searching. Computing the other bound cannot affect the result.
+            let lower_bound = curve.eval_unclamped(1.0) * direction == target;
+            let before = |value: f32| {
+                let value = value * direction;
+                value < target || (!lower_bound && value == target)
+            };
+            let (mut lo, mut hi, skipped) =
+                inverse_search_seed(curve, y, &before).unwrap_or((0.0, 1.0, 0));
+            for _ in skipped..32 {
+                let mid = (lo + hi) * 0.5;
+                // Once rounding repeats an endpoint, further iterations are
+                // identical. Keep the original 32-step cap near zero, where
+                // f32 spacing can remain finer than the search interval.
+                let exhausted = mid == lo || mid == hi;
+                if before(curve.eval_unclamped(mid)) {
+                    lo = mid;
                 } else {
-                    lower_hi = lower_mid;
+                    hi = mid;
                 }
-                let upper_mid = (upper_lo + upper_hi) * 0.5;
-                if curve.eval_unclamped(upper_mid) * direction <= target {
-                    upper_lo = upper_mid;
-                } else {
-                    upper_hi = upper_mid;
+                if exhausted {
+                    break;
                 }
             }
-            if curve.eval_unclamped(1.0) * direction == target {
-                lower_hi
+            if lower_bound {
+                hi
             } else {
-                upper_lo
+                lo
             }
         }
         Curve::Gamma(_) => y,
+    }
+}
+
+// Use an analytic estimate only to locate an exact dyadic search cell. The
+// endpoint predicates prove that the original bisection reaches this same
+// cell after 20 steps. No approximate inverse is returned. If the estimate
+// misses (including at a plateau or discontinuity), use the original domain.
+fn inverse_search_seed(
+    curve: &Curve,
+    y: f32,
+    before: &impl Fn(f32) -> bool,
+) -> Option<(f32, f32, usize)> {
+    let Curve::Para {
+        function: 3,
+        values,
+        direction: 1,
+    } = curve
+    else {
+        return None;
+    };
+    let (g, a, b, c, d) = (values[0], values[1], values[2], values[3], values[4]);
+    // Prove monotonicity on the actual, unclamped branches. Restrict this
+    // acceleration to the common positive type-3 (including sRGB) case.
+    if !(g > 0.0
+        && a > 0.0
+        && c > 0.0
+        && (0.0..=1.0).contains(&d)
+        && a * d + b >= 0.0
+        && c * d <= (a * d + b).powf(g))
+    {
+        return None;
+    }
+    let x = if y < curve.eval_unclamped(d) {
+        y / c
+    } else {
+        (y.powf(1.0 / g) - b) / a
+    };
+    const CELLS: f32 = 1048576.0;
+    if !(0.0..1.0).contains(&x) {
+        return None;
+    }
+    let index = (x * CELLS) as u32;
+    let lo = index as f32 / CELLS;
+    let hi = (index + 1) as f32 / CELLS;
+    if before(curve.eval_unclamped(lo)) && !before(curve.eval_unclamped(hi)) {
+        Some((lo, hi, 20))
+    } else {
+        None
     }
 }
 
@@ -514,5 +568,142 @@ pub(super) fn eval_parametric(function: u16, values: &[f32], x: f32) -> f32 {
             }
         }
         _ => x,
+    }
+}
+
+#[cfg(test)]
+mod inverse_search_tests {
+    use super::*;
+
+    // Frozen pre-optimization algorithm: compare bits, not a color tolerance.
+    fn reference(curve: &Curve, y: f32, direction: i8) -> f32 {
+        let direction = direction as f32;
+        let target = y * direction;
+        let (mut lower_lo, mut lower_hi) = (0.0, 1.0);
+        let (mut upper_lo, mut upper_hi) = (0.0, 1.0);
+        for _ in 0..32 {
+            let mid = (lower_lo + lower_hi) * 0.5;
+            if curve.eval_unclamped(mid) * direction < target {
+                lower_lo = mid;
+            } else {
+                lower_hi = mid;
+            }
+            let mid = (upper_lo + upper_hi) * 0.5;
+            if curve.eval_unclamped(mid) * direction <= target {
+                upper_lo = mid;
+            } else {
+                upper_hi = mid;
+            }
+        }
+        if curve.eval_unclamped(1.0) * direction == target {
+            lower_hi
+        } else {
+            upper_lo
+        }
+    }
+
+    #[test]
+    fn seed_requires_a_proven_original_search_cell() {
+        let curve = Curve::Para {
+            function: 3,
+            values: vec![2.4, 1.0 / 1.055, 0.055 / 1.055, 1.0 / 12.92, 0.04045],
+            direction: 1,
+        };
+        let y = 0.5;
+        let before = |v| v <= y;
+        let (lo, hi, depth) = inverse_search_seed(&curve, y, &before).unwrap();
+        let (mut reference_lo, mut reference_hi) = (0.0, 1.0);
+        for _ in 0..depth {
+            let mid = (reference_lo + reference_hi) * 0.5;
+            if before(curve.eval_unclamped(mid)) {
+                reference_lo = mid;
+            } else {
+                reference_hi = mid;
+            }
+        }
+        assert_eq!((lo, hi), (reference_lo, reference_hi));
+        assert_eq!(depth, 20);
+        assert!(inverse_search_seed(&curve, -1.0, &|v| v <= -1.0).is_none());
+        let plateau = Curve::Para {
+            function: 3,
+            values: vec![1.0, 0.0, 0.5, 1.0, 0.5],
+            direction: 1,
+        };
+        assert!(inverse_search_seed(&plateau, 0.5, &before).is_none());
+    }
+
+    #[test]
+    fn parametric_search_matches_original_bits() {
+        // All five functions, increasing/decreasing, lower/upper plateaus,
+        // discontinuities, non-normalized ranges, and very small gamma.
+        let cases: [(u16, Vec<f32>); 14] = [
+            (0, vec![2.2]),
+            (0, vec![0.01]),
+            (0, vec![10.0]),
+            (1, vec![2.0, 1.25, -0.25]),
+            (2, vec![2.0, 1.25, -0.25, 0.125]),
+            (
+                3,
+                vec![2.4, 1.0 / 1.055, 0.055 / 1.055, 1.0 / 12.92, 0.04045],
+            ),
+            (3, vec![1.0, -1.0, 1.0, -1.0, 0.0]),
+            (3, vec![1.0, 0.0, 0.5, 1.0, 0.5]),
+            (3, vec![1.0, 1.0, 0.0, 0.0, 0.25]),
+            (4, vec![2.0, 1.0, 0.0, 0.5, 0.5, 0.1, 0.0]),
+            (4, vec![1.0, -1.0, 1.0, -1.0, 0.5, 0.0, 1.0]),
+            (4, vec![1.0, 0.0, 0.5, -1.0, 0.5, 0.0, 1.0]),
+            (4, vec![2.0, 1.0, 0.0, 0.0, 0.25, 0.5, 0.5]),
+            (4, vec![1.0, 2.0, 0.0, 2.0, 0.5, 0.5, 0.0]),
+        ];
+        let cases: Vec<_> = cases
+            .into_iter()
+            .flat_map(|(function, values)| {
+                let fixed = values
+                    .iter()
+                    .map(|v| (v * 65536.0).round() / 65536.0)
+                    .collect();
+                [(function, values), (function, fixed)]
+            })
+            .collect();
+        for (function, values) in cases {
+            let direction = validate_parametric_curve_values(function, &values).unwrap();
+            let curve = Curve::Para {
+                function,
+                values,
+                direction,
+            };
+            validate_parametric_domain_curve(&curve).unwrap();
+            let mut targets = vec![
+                0.0,
+                -0.0,
+                1.0,
+                -1.0,
+                2.0,
+                f32::MIN_POSITIVE,
+                f32::from_bits(1),
+            ];
+            for i in 0..=4096 {
+                let x = i as f32 / 4096.0;
+                targets.push(x);
+                let y = curve.eval_unclamped(x);
+                targets.extend([y, y.next_down(), y.next_up()]);
+            }
+            // Include fine dyadic cell boundaries, adjacent floats and
+            // deterministic random targets, not just the coarse input grid.
+            let mut state = 0x12345678u32;
+            for _ in 0..8192 {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                let x = (state >> 12) as f32 / 1048576.0;
+                let y = curve.eval_unclamped(x);
+                targets.extend([y, y.next_down(), y.next_up(), f32::from_bits(state)]);
+            }
+            for y in targets.into_iter().filter(|y| y.is_finite()) {
+                assert_eq!(
+                    inverse_curve(&curve, y).to_bits(),
+                    reference(&curve, y, direction).to_bits(),
+                    "{curve:?}, y={y:?}"
+                );
+            }
+        }
     }
 }

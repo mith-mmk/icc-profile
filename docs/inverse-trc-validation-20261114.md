@@ -58,6 +58,10 @@ Host: macOS arm64, Rust 1.97.0. No Windows, Linux, wasm or MSRV claim.
   mean 0.3712/255. Perceptual/saturation retain an existing max 48/255 difference,
   mean 15.8123/255; they are **not** accuracy passes. Absolute is unsupported for
   that profile pair. ColorSync itself was not rerun in this change.
+  Follow-up: [controlled direct-API validation](colorsync-intents-validation-20261114.md)
+  reproduces that sips result and isolates an embedded-header versus command-intent
+  mismatch. Matched ColorSync API intents with BPC off give max 2/255 on 625 and
+  6561 samples; the historical 48-code figure is not an intent-matched accuracy result.
 - `rustfmt --check --edition 2021 src/transform/curve.rs` and `git diff --check`
   pass. Repository-wide `cargo fmt --check` already fails in unrelated files.
   `cargo clippy --offline -- -D warnings` fails with the same 97 existing errors

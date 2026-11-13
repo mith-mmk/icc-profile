@@ -1,0 +1,7 @@
+[package]
+name = "icc-colorsync-compare"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[dependencies]
+icc-profile = { path = "../.." }

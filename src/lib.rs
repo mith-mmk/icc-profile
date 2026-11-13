@@ -1,35 +1,46 @@
-//! ICC profile reader crate
+//! Profile-free color math and checked ICC transforms, with compatible legacy APIs.
+//!
+//! Choose [`simple`] for explicitly named standalone conversions with no profile,
+//! or [`icc`] for checked ICC parsing, direction-specific compilation and execution.
+//! ICC errors never select a simple conversion automatically.
+//!
+//! # ICC quickstart
 //! ```
-//! use icc_profile::utils::decoded_print;
-//! use icc_profile::iccprofile::*;
-//!
-//! use std::env;
-//!
-//! pub fn main() -> std::io::Result<()> {
-//!     let mut is_fast = true;
-//!     for argument in env::args() {
-//!         if is_fast {
-//!             is_fast = false;
-//!             continue
-//!         }
-//!         println!("{}",argument);
-//!         let icc_profile = icc_profile::utils::load(argument)?;
-//!         let decoded = DecodedICCProfile::new(&icc_profile.data)?;
-//!         println!("{}",decoded_print(&decoded, 0)?);
-//!     }
-//!     Ok(())
+//! use icc_profile::icc::{Profile, Transform, TransformError, TransformOptions};
+//! fn convert(src: &[u8], dst: &[u8], rgb: &[f32]) -> Result<Vec<f32>, TransformError> {
+//!     let src = Profile::parse(src)?;
+//!     let dst = Profile::parse(dst)?;
+//!     let transform = Transform::new(&src, &dst, TransformOptions::default())?;
+//!     transform.transform_f32_vec(rgb)
 //! }
-//!
 //! ```
-//! # Default Color spaces ranges
-//! - RGB        0..255,0..255,0..255 (u8)
-//! - YUV(YCbCr) 0..255,0..255,0..255 (u8)
-//! - XYZ 0.0..1.0,0.0..1.0,0.0..1.0 (f64)
-//! - L*a*b* 0.0-100.0,-127.0..127.0,-127.0..127.0 (f64)
-//! - CMYK 0..255,0..255,0..255,0..255 (u8)
+//!
+//! Device samples are interleaved channels in `0..=1` (`f32`), without alpha.
+//! Standalone compiled stages exchange physical D50 XYZ, not normalized LUT codes.
+//! Parsing validates the container; compiling validates the selected direction.
+//! See [`icc`] for execution limits, transactions and routing guarantees.
+//!
+//! # Profile-free quickstart
+//! ```
+//! use icc_profile::simple::{rgb8_to_ycbcr8_full, YcbcrCoefficients};
+//! let ycbcr = rgb8_to_ycbcr8_full([255, 0, 0], YcbcrCoefficients::Bt601);
+//! assert_eq!(ycbcr, [76, 85, 255]);
+//! ```
+//!
+//! These byte conversions use full-range digital YCbCr. For floating RGB/XYZ,
+//! supply a direction-specific matrix and already linear RGB; for XYZ/Lab,
+//! supply a reference white. No transfer curve or adaptation is implicit.
+//!
+//! # Compatibility
+//! Existing root exports, [`transform`], [`cms`] (including `transration`),
+//! [`iccprofile`] and [`utils`] remain available without deprecation attributes.
+//! Their old units, layouts and failure behavior are not redefined by the new
+//! namespaces. Prefer the explicit entrypoints for new work; migrate deliberately.
 
 pub use crate::iccprofile::*;
 pub mod cms;
+pub mod icc;
+pub mod simple;
 mod color_diff;
 pub mod iccprofile;
 pub mod transform;

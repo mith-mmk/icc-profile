@@ -2,7 +2,7 @@
 
 Pure Rust ICC profile parsing and explicit Gray/RGB and limited CMYK color transforms.
 
-Version 0.0.7 provides a checked ICC v2/v4 CMS for Gray and
+The checked engine provides a checked ICC v2/v4 CMS for Gray and
 RGB profiles. The processing core is `f32` and supports D50 PCS, XYZ/Lab,
 chromatic adaptation (`chad`), Gray TRC, RGB matrix/TRC, `curv`, parametric
 curves 0-4, `mft1`, `mft2`, `mAB`, `mBA`, A2B/B2A intent selection, optional
@@ -15,6 +15,24 @@ The development branch adds explicitly bounded CMYK output and relative matrix
 black-point compensation, described below. N-color, MPE and other unsupported
 routes return `UnsupportedProfileFeature`; there is no simplified color fallback.
 Alpha is not passed to the CMS and must be handled by the caller.
+
+## Choose the API layer
+
+- `simple`: profile-free, explicitly named color math with checked inputs and
+  strict packed-buffer lengths. Reexported matrix/whitepoint types retain their
+  legacy methods, including unchecked ones. Use the named conversion functions when you already know the matrix,
+  reference white or YCbCr coefficients. It does not read ICC profiles.
+- `icc`: the existing checked `Profile` / `Transform` engine, reexported without
+  wrappers. Use it when the profile defines color behavior. ICC failures are
+  returned to the caller, never converted through `simple` implicitly.
+- Existing root exports, `transform`, `cms::transration`, `iccprofile` and `utils`
+  stay available with their names, signatures and compatibility contracts.
+  Migration is recommended, not enforced: no `#[deprecated]` attributes or
+  removal are introduced. See [the migration map](docs/api-migration.md).
+
+This integration targets the `0.1.0` development line. `Cargo.toml` still declares
+package version `0.0.8`; the new namespaces described here are development
+changes, not a claim that a new crates.io release has been published.
 
 ## Interpolation and LittleCMS compatibility
 
@@ -30,19 +48,22 @@ used relative colorimetric intent, BPC off, and LittleCMS
 
 Neither method is universally more accurate; results depend on the profile
 and samples. This comparison does not establish an ICC specification violation,
-and numerical comparisons with manufacturer Lab-PCS output profiles remain
-unverified. The default interpolation behavior is unchanged.
+and does not establish universal numerical agreement. Recorded manufacturer
+CMYK output measurements are limited to their stated profiles, intents and
+algorithms: see [CMYK output](docs/cmyk-output.md),
+[absolute output](docs/cmyk-output-absolute.md), and
+[output BPC](docs/cmyk-output-bpc.md). The default interpolation behavior is unchanged.
 
-## Example
+## Checked ICC quickstart
 
 ```rust
-use icc_profile::{Profile, RenderingIntent, Transform, TransformOptions};
+use icc_profile::icc::{Profile, RenderingIntent, Transform, TransformOptions};
 
 fn convert(source_icc: &[u8], destination_icc: &[u8], input: &[f32])
     -> Result<Vec<f32>, Box<dyn std::error::Error>>
 {
-    let source = Profile::from_bytes(source_icc)?;
-    let destination = Profile::from_bytes(destination_icc)?;
+    let source = Profile::parse(source_icc)?;
+    let destination = Profile::parse(destination_icc)?;
     let transform = Transform::new(
         &source,
         &destination,
@@ -56,6 +77,78 @@ fn convert(source_icc: &[u8], destination_icc: &[u8], input: &[f32])
     Ok(transform.transform_f32_vec(input)?)
 }
 ```
+
+## Profile-free quickstart
+
+```rust
+use icc_profile::simple::{
+    rgb8_to_ycbcr8_full_buffer, xyz_f64_to_lab_f64, WhitePoint, YcbcrCoefficients,
+};
+
+let ycbcr = rgb8_to_ycbcr8_full_buffer(&[255, 0, 0], YcbcrCoefficients::Bt601)?;
+assert_eq!(ycbcr.len(), 3); // packed Y, Cb, Cr; no alpha
+let white = WhitePoint::d50();
+let lab = xyz_f64_to_lab_f64([white.x, white.y, white.z], &white)?;
+assert!((lab[0] - 100.0).abs() < 1e-9);
+# Ok::<(), icc_profile::simple::SimpleError>(())
+```
+
+Byte YCbCr is full range with neutral chroma 128; BT.601/BT.709 select
+coefficients, not transfer functions or studio-range video. Floating conversions
+are finite, unclipped `f64`: RGB must already be linear, XYZ uses the scale of
+the supplied matrix/white (normally Y=1), and Lab uses L* and signed a*/b*.
+There is no implicit adaptation, transfer curve, matrix inversion or alpha.
+New buffers consume **all** samples as packed triples and reject incomplete
+pixels, unlike legacy `entries` functions that may accept a surplus tail or use
+RGBA layouts. Their Vec allocation is fallible; they do not use the ICC Vec cap.
+See [profile-free examples and compatibility](docs/simple-conversions.md).
+
+## ICC execution contract
+
+`Profile::parse` validates and owns the container bytes; direction-specific
+compilation validates the selected stages. A parsed profile need not support
+both directions. Existing `Profile::new` / `from_bytes` retain their earlier
+semantic validation behavior.
+
+- Pair transforms use packed/interleaved Gray, RGB or CMYK samples, no alpha:
+  `f32` device values are `0..=1`; `u8` and `u16` represent their full code ranges.
+  CMYK is increasing ink, not JPEG inverted CMYK or YCCK.
+- A standalone `CompiledProfile` exchanges **physical D50 XYZ** on the PCS
+  side, including when the ICC payload uses Lab. XYZ is not normalized LUT
+  encoding and is not restricted to `0..=1`.
+- `clamp=false` does not promise HDR or arbitrary out-of-range processing.
+  Curve inverse domains and LUT/route restrictions still apply.
+- Borrowed ordinary `f32` output can be partly written before a late error.
+  Choose the atomic methods for unchanged output on error (cost below). Input
+  must contain whole pixels and output length must match the route exactly.
+- Vec helpers default to a **64 MiB output allocation cap**. Select an explicit
+  `ExecutionLimits` bound when necessary; parser and compiler limits are separate.
+- `RouteInfo::used_fallback` reports legal ICC tag/model selection within the
+  checked engine. It never means falling back to profile-free color math.
+- `TransformError` remains source-compatible and exhaustive. Malformed inputs
+  are not uniformly classified as `MalformedProfile`; some established checks
+  return `InvalidProfile` or another applicable error. Even a valid profile can
+  produce `MalformedProfile` for an out-of-range device sample with `clamp=false`;
+  do not infer profile corruption from that variant or parse message text.
+- `AlgorithmProfile` selects implemented numerical algorithms only, not arbitrary
+  external engines or callbacks. `ColorEntries::to_xyz` / `to_lab` remain
+  unimplemented legacy entrypoints and are not migration destinations.
+
+### Black-point compensation route support
+
+| Pair route | Accepted BPC subset |
+| --- | --- |
+| RGB matrix/TRC → RGB matrix/TRC | Relative intent; XYZ PCS and encoded D50 headers; both selected forward routes must be matrix. |
+| v4 printer CMYK → RGB matrix/TRC | Relative intent; explicit source A2B1 + same-profile B2A0; XYZ matrix destination and D50 headers. |
+| RGB matrix/TRC → v4 printer CMYK | Relative intent; explicit destination B2A1 + A2B1 + B2A0; XYZ matrix source and D50 headers. |
+| Gray, general LUT/RGB, v2 CMYK, CMYK → CMYK, non-relative intent | Not supported with BPC. |
+
+Additional route/estimator validation can reject an otherwise readable profile.
+CMYK BPC does not accept selected-tag fallback; invalid/degenerate estimators
+fail explicitly. See [matrix BPC](docs/relative-matrix-bpc.md),
+[CMYK input BPC](docs/cmyk-input-bpc.md) and
+[CMYK output BPC](docs/cmyk-output-bpc.md). This is a bounded implementation,
+not a claim of full ISO 18619 conformance.
 
 ## Testing
 

@@ -2319,7 +2319,11 @@ fn cmyk_intent_profile(version: u8, signatures: &[[u8; 4]], malformed: Option<[u
         let start = if version == 2 { 68 } else { 52 };
         let corners = if version == 2 { 16 } else { 48 };
         let code = (signature[3] - b'0' + 1) as u16 * 4096;
-        for v in tag[start..start + corners * 3 * 2].chunks_exact_mut(2) {
+        for v in tag[start..start + corners * 3 * 2]
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+        {
             v.copy_from_slice(&code.to_be_bytes());
         }
         if malformed == Some(*signature) {
@@ -2477,8 +2481,12 @@ fn cmyk_absolute_fixture(version: u8, pcs: [u8; 4], codes: [u16; 3], white: [f32
     };
     let mut tag = original[144..].to_vec();
     let (start, corners) = if version == 2 { (68, 16) } else { (52, 48) };
-    for chunk in tag[start..start + corners * 6].chunks_exact_mut(6) {
-        for (sample, code) in chunk.chunks_exact_mut(2).zip(codes) {
+    for chunk in tag[start..start + corners * 6]
+        .as_chunks_mut::<6>()
+        .0
+        .iter_mut()
+    {
+        for (sample, code) in chunk.as_chunks_mut::<2>().0.iter_mut().zip(codes) {
             sample.copy_from_slice(&code.to_be_bytes());
         }
     }

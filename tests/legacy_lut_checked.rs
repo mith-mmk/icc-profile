@@ -635,10 +635,10 @@ fn rgb_bridge_rejects_xyz_and_matrix_overflow_but_keeps_finite_clipping() {
     invalid(|| try_cmyk_to_rgb_lut16(0, 0, 0, 0, &b, &enormous));
     // Neutral-ish Lab keeps XYZ finite, but the matrix's opposite signed
     // products overflow and cancel to NaN. Check before the byte cast hides it.
-    for v in a.clut_values.chunks_exact_mut(3) {
+    for v in a.clut_values.as_chunks_mut::<3>().0.iter_mut() {
         v.copy_from_slice(&[255, 127, 127]);
     }
-    for v in b.clut_values.chunks_exact_mut(3) {
+    for v in b.clut_values.as_chunks_mut::<3>().0.iter_mut() {
         v.copy_from_slice(&[65535, 32767, 32768]);
     }
     for (l, aa, bb) in [

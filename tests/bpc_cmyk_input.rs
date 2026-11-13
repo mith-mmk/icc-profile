@@ -492,8 +492,8 @@ fn cmyk_bpc_caps_high_luminance_probe_at_lstar50() {
         } else {
             [18000, 20000, 16000]
         };
-        for corner in high[52..52 + 16 * 6].chunks_exact_mut(6) {
-            for (sample, code) in corner.chunks_exact_mut(2).zip(codes) {
+        for corner in high[52..52 + 16 * 6].as_chunks_mut::<6>().0.iter_mut() {
+            for (sample, code) in corner.as_chunks_mut::<2>().0.iter_mut().zip(codes) {
                 sample.copy_from_slice(&code.to_be_bytes());
             }
         }

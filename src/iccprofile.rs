@@ -14,9 +14,11 @@ pub fn icc_profile_decode(data :&Vec<u8>) -> Result<DecodedICCProfile> {
     let mut decoded: HashMap<String,Data> = HashMap::new();
     let header_size = 128;
     let mut ptr = header_size;
+    bound_check(&icc_profile.data,ptr,4)?;
     let tags = read_u32_be(&icc_profile.data,ptr);
     ptr +=  4;
-    bound_check(&icc_profile.data,ptr,tags as usize * 12)?;
+    let table_size = (tags as usize).checked_mul(12).ok_or_else(|| Error::other("ICC tag table size overflow"))?;
+    bound_check(&icc_profile.data,ptr,table_size)?;
     for _ in 0..tags {
         let tag_name = read_string(&icc_profile.data,ptr,4);
         ptr +=  4;
@@ -24,7 +26,9 @@ pub fn icc_profile_decode(data :&Vec<u8>) -> Result<DecodedICCProfile> {
         ptr +=  4;
         let tag_length = read_u32_be(&icc_profile.data,ptr) as usize;
         ptr +=  4;
-        let (_,val) = Data::parse(&icc_profile.data[tag_offset..],tag_length,icc_profile.version)?;
+        bound_check(&icc_profile.data,tag_offset,tag_length)?;
+        let payload = &icc_profile.data[tag_offset..tag_offset + tag_length];
+        let (_,val) = Data::parse(payload,tag_length,icc_profile.version)?;
         decoded.insert(tag_name,val);
     }
     Ok(DecodedICCProfile {

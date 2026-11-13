@@ -1,5 +1,5 @@
 use std::io::Result;
-use std::io::{Error,ErrorKind};
+use crate::utils::checked_batch_len;
 use crate::cms::ColorMatrix3D;
 
 pub enum XYZtoRGBCoefficient {
@@ -51,12 +51,9 @@ pub fn xyz_to_rgb(x:f64,y:f64,z:f64) -> (u8,u8,u8) {
 
 
 pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries *3 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
-    let index = (entries / 3) as usize;
-    let mut buffer = Vec::with_capacity(index * 3);
+    let mut buffer = Vec::with_capacity(output_len);
 
     for i in 0..entries {
         let ptr = i * 3;
@@ -76,12 +73,9 @@ pub fn xyz_to_rgb_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) 
 }
 
 pub fn xyz_to_rgba_entries (buf:&[u8],entries: usize,mode: &XYZtoRGBCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries * 4 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 4, 4)?;
     let matrix = mode.get();
-    let index = (entries / 4) as usize;
-    let mut buffer = Vec::with_capacity(index * 3);
+    let mut buffer = Vec::with_capacity(output_len);
 
     for i in 0..entries {
         let ptr = i * 4;

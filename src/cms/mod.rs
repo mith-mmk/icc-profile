@@ -6,6 +6,12 @@ use crate::S15Fixed16Number;
 
 pub mod transration;
 
+/// Legacy color-buffer container.
+///
+/// The seven `to_*` methods are unimplemented placeholders and always return
+/// `None`, even when the stored representation matches the requested one.
+/// Use the explicit conversion functions in [`transration`] instead; they
+/// require callers to choose the whitepoint, encoding or profile as applicable.
 pub enum ColorEntries {
     Rgb24(Vec<u8>),
     Rgba32(Vec<u8>),
@@ -18,31 +24,38 @@ pub enum ColorEntries {
 }
 
 impl ColorEntries {
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_rgb(&self) -> Option<Vec<u8>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_lab(&self) -> Option<Vec<f64>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_lab24(&self) -> Option<Vec<u8>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_lab48(&self) -> Option<Vec<u16>> {
         None
     }
 
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_xyz(&self) -> Option<Vec<f64>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_xyz24(&self) -> Option<Vec<u8>> {
         None
     }
 
+    /// Unimplemented placeholder. Always returns `None`; no conversion is performed.
     pub fn to_ymck(&self) -> Option<Vec<f64>> {
         None
     }
@@ -143,7 +156,21 @@ impl ColorMatrix3D {
         }
     }
 
+    /// Compatibility spelling of [`Self::inverse`].
     pub fn invese(matrix:&Self) -> Option<Self> {
+        Self::inverse(matrix)
+    }
+
+    /// Invert a finite matrix using the legacy cofactor calculation.
+    ///
+    /// Returns `None` for nonfinite input, a zero or nonfinite determinant, or
+    /// a nonfinite result. This is not a condition-number check: no absolute
+    /// determinant tolerance is imposed, and very small finite determinants
+    /// remain valid when the calculation produces finite inverse entries.
+    pub fn inverse(matrix:&Self) -> Option<Self> {
+        if !matrix.e.iter().all(|value| value.is_finite()) {
+            return None;
+        }
         let a11 = matrix.e[0];
         let a12 = matrix.e[1];
         let a13 = matrix.e[2];
@@ -156,10 +183,10 @@ impl ColorMatrix3D {
         
         let delta =  a11 * a22 * a33 + a12 *a23 * a31 + a13 * a21 * a32
             - a13 * a22 * a31 - a11 * a23 * a32 - a12 * a21 *a33;
-        if delta == 0.0 {
+        if delta == 0.0 || !delta.is_finite() {
             None
         } else {
-            Some(Self{
+            let inverse = Self{
                 e:[
                 (a22 * a33 - a23 * a32) /delta,
                 (a13 * a32 - a12 * a33) /delta,
@@ -173,10 +200,38 @@ impl ColorMatrix3D {
                 (a12 * a31 - a11 * a32) /delta,
                 (a11 * a22 - a12 * a21) /delta
                 ]
-            })
+            };
+            if inverse.e.iter().all(|value| value.is_finite()) {
+                Some(inverse)
+            } else {
+                None
+            }
         }
     }
 
+    /// Multiply three finite components by a finite matrix without clamping.
+    ///
+    /// Returns `InvalidInput` if any input or matrix coefficient is nonfinite,
+    /// or if arithmetic produces a nonfinite result. Finite out-of-gamut values
+    /// are accepted. Byte callers can apply their existing rounding and clipping
+    /// policy after this check.
+    pub fn try_convert_3d(&self, x: f64, y: f64, z: f64) -> std::io::Result<(f64, f64, f64)> {
+        if ![x, y, z].iter().all(|value| value.is_finite())
+            || !self.e.iter().all(|value| value.is_finite())
+        {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Nonfinite matrix or input"));
+        }
+        let (a, b, c) = self.convert_3d(x, y, z);
+        if ![a, b, c].iter().all(|value| value.is_finite()) {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Nonfinite matrix result"));
+        }
+        Ok((a, b, c))
+    }
+
+    /// Multiply components with ordinary floating-point arithmetic.
+    ///
+    /// This legacy scalar API may return NaN or infinity. Use
+    /// [`Self::try_convert_3d`] when invalid input or overflow must be rejected.
     pub fn convert_3d(&self,x:f64,y:f64,z:f64) -> (f64,f64,f64) {
         let e = self.e;
         let (x,y,z) = (x,y,z);
@@ -229,3 +284,30 @@ impl ColorMatrix3D {
 
 }
 
+
+#[cfg(test)]
+mod matrix_batch_allocation_tests {
+    use super::transration::*;
+    use crate::allocation_probe::{fail_once, failure_hits};
+
+    #[test]
+    fn output_reservation_failures_return_errors_for_all_matrix_batches() {
+        macro_rules! check {
+            ($bytes:expr, $call:expr) => {{
+                let result = fail_once($bytes, || $call);
+                assert!(result.is_err());
+                assert_eq!(failure_hits(), 1);
+            }};
+        }
+        check!(24, rgb_to_xyz_entries_f64(&[128; 3], 1, &RGBToXYZCoefficient::SrgbD65));
+        check!(24, rgba_to_xyz_entries_f64(&[128; 4], 1, &RGBToXYZCoefficient::SrgbD65));
+        check!(3, rgb_to_xyz_entries(&[128; 3], 1, &RGBToXYZCoefficient::SrgbD65));
+        check!(3, rgba_to_xyz_entries(&[128; 4], 1, &RGBToXYZCoefficient::SrgbD65));
+        check!(3, xyz_to_rgb_entries(&[128; 3], 1, &XYZtoRGBCoefficient::SrgbD65));
+        check!(4, xyz_to_rgba_entries(&[128; 4], 1, &XYZtoRGBCoefficient::SrgbD65));
+        check!(3, rgb_to_yuv_entries(&[128; 3], 1, &RGBToYUVCoefficient::Bt601));
+        check!(3, yuv_to_rgba_entries_from_rgb(&[128; 4], 1, &RGBToYUVCoefficient::Bt601));
+        check!(3, yuv_to_rgb_entries(&[128; 3], 1, &YUVToRGBCoefficient::Bt601));
+        check!(4, yuv_to_rgba_entries_from_yuv(&[128; 3], 1, &YUVToRGBCoefficient::Bt601));
+    }
+}

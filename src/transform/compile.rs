@@ -143,7 +143,8 @@ impl CompiledProfile {
         Ok(())
     }
 
-    /// Evaluate the compiled stage at its explicit physical D50 XYZ boundary.
+    /// Evaluate one pixel (not a batch) at the explicit physical D50 XYZ boundary.
+    /// Device/PCS slices contain exactly the stage channel counts, without alpha.
     /// For a v4 CMYK perceptual PcsToDevice stage, XYZ is expressed in the
     /// perceptual PCS reference medium (ICC v4 6.3.3), not relative media XYZ.
     /// For v4 CMYK saturation, XYZ represents the vendor-authored saturation
@@ -156,10 +157,16 @@ impl CompiledProfile {
     /// Evaluation errors may partially update output; use `transform_f32_atomic`
     /// when unchanged output on error is required.
     pub fn transform_f32(&self, input: &[f32], output: &mut [f32]) -> Result<(), TransformError> {
-        if input.len() != self.0.input_channels || output.len() != self.0.output_channels {
+        if input.len() != self.0.input_channels {
             return Err(TransformError::InvalidBufferLength {
                 expected: self.0.input_channels,
                 actual: input.len(),
+            });
+        }
+        if output.len() != self.0.output_channels {
+            return Err(TransformError::InvalidBufferLength {
+                expected: self.0.output_channels,
+                actual: output.len(),
             });
         }
         if input.iter().any(|value| !value.is_finite()) {
@@ -814,6 +821,15 @@ impl Transform {
         Ok(())
     }
 
+    /// Convert a batch of tightly interleaved device pixels, without alpha.
+    /// Gray/RGB/CMYK f32 samples are normalized to 0..=1; CMYK increases with ink.
+    /// Unlike CompiledProfile::transform_f32, this accepts multiple pixels and
+    /// both sides are device values, not physical PCS XYZ. Input must contain
+    /// complete pixels and output must have exactly the required sample count.
+    /// With clamp=true finite device input/output is clipped where supported;
+    /// clamp=false rejects out-of-domain input (currently as MalformedProfile,
+    /// even for a valid profile). Neither mode enables general HDR processing.
+    ///
     /// Convert in one pass. Length errors leave output unchanged, but a later
     /// sample or evaluation error may leave a partially updated output.
     /// Use [`Self::transform_f32_atomic`] for unchanged output on every error.

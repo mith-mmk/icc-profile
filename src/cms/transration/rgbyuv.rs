@@ -1,3 +1,8 @@
+//! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
+//! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Output reservation failures are returned as errors.
+//! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
+//!
 //! RGB to YUV (YCbCr) color space conversion
 //!
 //! This module provides conversion functions from RGB color space to YUV/YCbCr.
@@ -32,7 +37,7 @@
 
 use crate::cms::ColorMatrix3D;
 use std::io::Result;
-use std::io::{Error, ErrorKind};
+use crate::utils::checked_batch_len;
 
 /// RGB to YUV conversion coefficient presets
 ///
@@ -186,11 +191,9 @@ pub fn rgb_to_yuv_with_mode(r: u8, g: u8, b: u8, mode: &RGBToYUVCoefficient) -> 
 /// // yuv = [128, 128, 128, 255, 128, 128, 0, 128, 128]
 /// ```
 pub fn rgb_to_yuv_entries(buf: &[u8], entries: usize, mode: &RGBToYUVCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries * 3 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
-    let index = (entries / 3) as usize;
-    let mut buffer = Vec::with_capacity(index * 3);
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
     let matrix = mode.get();
 
     for i in 0..entries {
@@ -199,7 +202,7 @@ pub fn rgb_to_yuv_entries(buf: &[u8], entries: usize, mode: &RGBToYUVCoefficient
         let g = buf[ptr + 1];
         let b = buf[ptr + 2];
 
-        let (y, u, v) = matrix.convert_3d(r as f64, g as f64, b as f64);
+        let (y, u, v) = matrix.try_convert_3d(r as f64, g as f64, b as f64)?;
         let y = (y + 0.5).clamp(0.0, 255.0) as u8;
         let u = (u + 128.5).clamp(0.0, 255.0) as u8;
         let v = (v + 128.5).clamp(0.0, 255.0) as u8;
@@ -213,6 +216,9 @@ pub fn rgb_to_yuv_entries(buf: &[u8], entries: usize, mode: &RGBToYUVCoefficient
 }
 
 /// Convert RGBA pixel buffer to YUV
+///
+/// This historical name is reversed: the function converts RGBA to YCbCr and
+/// discards alpha. Prefer the correctly named [`rgba_to_yuv_entries`] alias.
 ///
 /// Processes RGBA input (with alpha channel) and outputs YUV triplets,
 /// effectively extracting RGB and converting to YUV.
@@ -233,11 +239,9 @@ pub fn rgb_to_yuv_entries(buf: &[u8], entries: usize, mode: &RGBToYUVCoefficient
 ///
 /// Returns error if `buf.len() < entries * 4`
 pub fn yuv_to_rgba_entries_from_rgb(buf: &[u8], entries: usize, mode: &RGBToYUVCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries * 4 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
-    let index = (entries / 4) as usize;
-    let mut buffer = Vec::with_capacity(index * 3);
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 4, 3)?;
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(output_len).map_err(std::io::Error::other)?;
     let matrix = mode.get();
 
     for i in 0..entries {
@@ -246,7 +250,7 @@ pub fn yuv_to_rgba_entries_from_rgb(buf: &[u8], entries: usize, mode: &RGBToYUVC
         let g = buf[ptr + 1];
         let b = buf[ptr + 2];
 
-        let (y, u, v) = matrix.convert_3d(r as f64, g as f64, b as f64);
+        let (y, u, v) = matrix.try_convert_3d(r as f64, g as f64, b as f64)?;
         let y = (y + 0.5).clamp(0.0, 255.0) as u8;
         let u = (u + 128.5).clamp(0.0, 255.0) as u8;
         let v = (v + 128.5).clamp(0.0, 255.0) as u8;
@@ -258,4 +262,13 @@ pub fn yuv_to_rgba_entries_from_rgb(buf: &[u8], entries: usize, mode: &RGBToYUVC
 
 
     Ok(buffer)
+}
+
+/// Convert packed RGBA bytes to full-range YCbCr triplets, discarding alpha.
+///
+/// This correctly named alias preserves [`yuv_to_rgba_entries_from_rgb`],
+/// including its coefficient presets, rounding, clipping and error behavior.
+/// Input is `[R, G, B, A, ...]`, output is `[Y, Cb, Cr, ...]`.
+pub fn rgba_to_yuv_entries(buf: &[u8], entries: usize, mode: &RGBToYUVCoefficient) -> Result<Vec<u8>> {
+    yuv_to_rgba_entries_from_rgb(buf, entries, mode)
 }

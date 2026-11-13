@@ -80,8 +80,15 @@ impl RouteInfo {
 
 #[derive(Clone, Copy, Debug)]
 pub struct TransformOptions {
+    /// Pair-transform intent; defaults to RelativeColorimetric here, unlike
+    /// RenderingIntent::default(), which is Perceptual.
     pub rendering_intent: RenderingIntent,
+    /// Enable bounded, route-specific relative BPC. Defaults to false;
+    /// unsupported routes return an error rather than ignoring the request.
     pub black_point_compensation: bool,
+    /// Clip finite device samples/output to the normalized domain where the
+    /// route supports it. Defaults to true. False rejects out-of-domain device
+    /// input; it does not enable HDR or relax curve/LUT domain restrictions.
     pub clamp: bool,
 }
 
@@ -130,9 +137,15 @@ pub(super) struct ProfileInner {
 pub struct Profile(pub(super) Arc<ProfileInner>);
 
 impl Profile {
+    /// Parse with legacy eager semantic validation. This can reject a profile
+    /// whose forward direction is usable but whose TRC cannot be inverted.
+    /// Prefer [`Self::parse`] followed by direction-specific compilation for
+    /// new code; that workflow does not change this constructor's behavior.
     pub fn new(data: &[u8]) -> Result<Self, TransformError> {
         Self::from_bytes_with_limits(data, ParseLimits::default())
     }
+    /// Alias of [`Self::new`], including its eager semantic validation.
+    /// It is not an alias of the structural [`Self::parse`] workflow.
     pub fn from_bytes(data: &[u8]) -> Result<Self, TransformError> {
         Self::new(data)
     }
@@ -140,7 +153,8 @@ impl Profile {
     /// Parse the checked ICC container structure without compiling any
     /// direction-specific transform stages.  The returned profile owns the
     /// validated bytes and tag ranges; unsupported or non-invertible stages
-    /// are diagnosed only when a direction is compiled.
+    /// are diagnosed only when a direction is compiled. This is not complete
+    /// semantic validation or a guarantee that either direction can compile.
     pub fn parse(data: &[u8]) -> Result<Self, TransformError> {
         Self::parse_with_limits(data, ParseLimits::default())
     }

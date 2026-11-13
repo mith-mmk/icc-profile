@@ -1,15 +1,49 @@
 use crate::{ICCNumber, ParametricCurve};
 use std::io::{Error,ErrorKind};
 
+/// Evaluate the legacy byte-domain parametric curve helper.
+///
+/// Input bytes are used directly as `x` in `0..=255`, not normalized ICC
+/// coordinates. Finite results are rounded and clamped to a byte; for example,
+/// type 0 with gamma 2 maps 128 to 255. Unknown function types remain identity.
+/// Empty batches succeed without evaluating or validating the curve.
+///
+/// # Errors
+///
+/// Returns an error for short input, missing coefficients, a zero divisor `a`
+/// in types 1 or 2, or a nonfinite evaluated result (including invalid real
+/// power domains and overflow), or an output reservation failure.
+/// Types 3 and 4 do not divide by `a` and may use
+/// zero `a` when the selected branch yields a finite result.
 pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:ParametricCurve) -> Result<Vec<u8>, Error>{
     if buf.len() < entry {
         return Err(Error::new(ErrorKind::Other, "Data shotage"))
     }
-    let mut p = vec![];
-    for val in prametic_curve.vals {
-        p.push(val.as_f64())
+    // Empty batches historically accept even incomplete curves without evaluating them.
+    if entry == 0 {
+        return Ok(Vec::new());
     }
-    let mut data = vec![];
+    let required = match prametic_curve.funtion_type {
+        0 => 1,
+        1 => 3,
+        2 => 4,
+        3 => 5,
+        4 => 7,
+        _ => 0,
+    };
+    if entry != 0 && prametic_curve.vals.len() < required {
+        return Err(Error::new(ErrorKind::InvalidInput, "Parametric curve coefficients shortage"));
+    }
+    // At most seven coefficients are used; ignore surplus data without allocating.
+    let mut p = [0.0; 7];
+    for (index, val) in prametic_curve.vals.iter().take(required).enumerate() {
+        p[index] = val.as_f64();
+    }
+    if entry != 0 && matches!(prametic_curve.funtion_type, 1 | 2) && p[1] == 0.0 {
+        return Err(Error::new(ErrorKind::InvalidInput, "Parametric curve has zero divisor a"));
+    }
+    let mut data = Vec::new();
+    data.try_reserve_exact(entry).map_err(Error::other)?;
  
     for i in 0..entry {
         let x = buf[i] as f64;
@@ -68,6 +102,9 @@ pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:Parametr
             },
             _ => { y = x; }
         }
+        if !y.is_finite() {
+            return Err(Error::new(ErrorKind::InvalidInput, "Parametric curve result is not finite"));
+        }
         data.push(((y + 0.5) as i16).clamp(0, 255) as u8);
     }
     Ok(data)
@@ -80,6 +117,15 @@ mod tests {
 
     fn s15(val: f64) -> S15Fixed16Number {
         S15Fixed16Number::new(val)
+    }
+
+    #[test]
+    fn output_reservation_failure_returns_error() {
+        let curve = ParametricCurve { funtion_type: 0, vals: vec![s15(1.0)] };
+        let result = crate::allocation_probe::fail_once(3, ||
+            transration_prametic_curve(&[0, 128, 255], 3, curve));
+        assert!(result.is_err());
+        assert_eq!(crate::allocation_probe::failure_hits(), 1);
     }
 
     // --- type 0x000: y = x^gamma ---

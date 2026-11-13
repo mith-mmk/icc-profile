@@ -14,9 +14,11 @@ pub fn icc_profile_decode(data :&Vec<u8>) -> Result<DecodedICCProfile> {
     let mut decoded: HashMap<String,Data> = HashMap::new();
     let header_size = 128;
     let mut ptr = header_size;
+    bound_check(&icc_profile.data,ptr,4)?;
     let tags = read_u32_be(&icc_profile.data,ptr);
     ptr +=  4;
-    bound_check(&icc_profile.data,ptr,tags as usize * 12)?;
+    let table_size = (tags as usize).checked_mul(12).ok_or_else(|| Error::other("ICC tag table size overflow"))?;
+    bound_check(&icc_profile.data,ptr,table_size)?;
     for _ in 0..tags {
         let tag_name = read_string(&icc_profile.data,ptr,4);
         ptr +=  4;
@@ -24,7 +26,9 @@ pub fn icc_profile_decode(data :&Vec<u8>) -> Result<DecodedICCProfile> {
         ptr +=  4;
         let tag_length = read_u32_be(&icc_profile.data,ptr) as usize;
         ptr +=  4;
-        let (_,val) = Data::parse(&icc_profile.data[tag_offset..],tag_length,icc_profile.version)?;
+        bound_check(&icc_profile.data,tag_offset,tag_length)?;
+        let payload = &icc_profile.data[tag_offset..tag_offset + tag_length];
+        let (_,val) = Data::parse(payload,tag_length,icc_profile.version)?;
         decoded.insert(tag_name,val);
     }
     Ok(DecodedICCProfile {
@@ -205,7 +209,11 @@ impl ICCProfile {
 pub trait ICCNumber {
     fn as_f32(&self) -> f32;
     fn as_f64(&self) -> f64;
+    /// Floor of the represented number (also for negative values).
     fn int(&self) -> i32;
+    /// Raw fractional field, not a decimal-digit string.
+    /// For compatibility, U1Fixed15Number returns its entire stored 16-bit word,
+    /// including the integer bit; mask with 0x7fff for only its fractional bits.
     fn decimal(&self) -> u32;
 }
 
@@ -216,16 +224,36 @@ pub struct S15Fixed16Number {
 }
 
 impl S15Fixed16Number {
+    /// Encode finite values in [-32768, 32767 + 65535/65536], rounding
+    /// toward negative infinity to the next representable 16-bit fraction.
+    ///
+    /// Outside that range this retains the legacy cast-based behavior: the
+    /// floored integer saturates to i16 and the fractional part is multiplied
+    /// by 65535 and cast to u16 (NaN becomes zero). This is not range validation;
+    /// use [`Self::checked_new`] when input may be invalid.
     pub fn new(val: f64) -> Self {
+        if let Some(number) = Self::checked_new(val) {
+            return number;
+        }
         let integer = val.floor() as i16;
         let decimal = ((val - val.floor()) * u16::MAX as f64) as u16;
         S15Fixed16Number { integer, decimal }
     }
+
+    /// Encode a finite value in the exact representable range, or return None.
+    /// Quantization is floor(value * 65536), including for negative fractions.
+    pub fn checked_new(val: f64) -> Option<Self> {
+        if !val.is_finite() || val < -32768.0 || val > i32::MAX as f64 / 65536.0 {
+            return Option::None;
+        }
+        let raw = (val * 65536.0).floor() as i32;
+        Some(Self { integer: (raw >> 16) as i16, decimal: raw as u16 })
+    }
 }
 
 impl ICCNumber for S15Fixed16Number {
-    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / u16::MAX as f32 }
-    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / u16::MAX as f64 }
+    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / 65536.0 }
+    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / 65536.0 }
     fn int(&self) -> i32 { self.integer as i32 }
     fn decimal(&self) -> u32 { self.decimal as u32}
 }
@@ -237,8 +265,8 @@ pub struct U16Fixed16Number {
 }
 
 impl ICCNumber for U16Fixed16Number {
-    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / u16::MAX as f32 }
-    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / u16::MAX as f64 }
+    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / 65536.0 }
+    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / 65536.0 }
     fn int(&self) -> i32 { self.integer as i32 }
     fn decimal(&self) -> u32 { self.decimal as u32}
 }
@@ -249,9 +277,9 @@ pub struct U1Fixed15Number {
 }
 
 impl ICCNumber for U1Fixed15Number {
-    fn as_f32(&self) -> f32 { self.decimal as f32 / i16::MAX as f32 }
-    fn as_f64(&self) -> f64 { self.decimal as f64 / i16::MAX as f64 }
-    fn int(&self) -> i32 { 0 }
+    fn as_f32(&self) -> f32 { self.decimal as f32 / 32768.0 }
+    fn as_f64(&self) -> f64 { self.decimal as f64 / 32768.0 }
+    fn int(&self) -> i32 { (self.decimal >> 15) as i32 }
     fn decimal(&self) -> u32 { self.decimal as u32}
 }
 
@@ -262,11 +290,15 @@ pub struct U8Fixed8Number {
 }
 
 impl ICCNumber for U8Fixed8Number {
-    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / u8::MAX as f32 }
-    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / u8::MAX as f64  }
+    fn as_f32(&self) -> f32 { self.integer as f32 + self.decimal as f32 / 256.0 }
+    fn as_f64(&self) -> f64 { self.integer as f64 + self.decimal as f64 / 256.0  }
     fn int(&self) -> i32 { self.integer as i32 }
     fn decimal(&self) -> u32 { self.decimal as u32}
 }
+
+#[cfg(test)]
+#[path = "legacy_fixed_point_tests.rs"]
+mod legacy_fixed_point_tests;
 
 #[derive(Debug)]
 pub struct XYZNumber {
@@ -447,7 +479,7 @@ pub struct FormulaCurve {
 
 impl FormulaCurve {
     pub fn as_size(&self) -> usize {
-        self.vals.len() * 4 + 2
+        self.vals.len() * 4 + 12
     }
 }
 
@@ -695,6 +727,8 @@ fn illuminant_type_string(measurement_illuminate: u32) -> String {
 
 impl Data {
     pub fn parse(data: &[u8],length:usize,version:u32) -> Result<(String,Data)> {
+        bound_check(data, 0, length)?;
+        let data = &data[..length];
         let data_type = Self::read_data_type(data,0)?;
         Ok((data_type.clone(),Self::get(&data_type,data,length,version)?))
     }
@@ -702,13 +736,16 @@ impl Data {
     fn read_parmetic_curve(data:&[u8]) -> Result<Curve> {
         bound_check(data,0,12)?;
         let data_type = Self::read_data_type(data,0)?;
-        if data_type != "para" {
+        if data_type != "para" && data_type != "curv" {
+            return Err(Error::other("Unsupported embedded curve type"));
+        }
+        if data_type == "curv" {
             let mut ptr = 8;
             bound_check(data, ptr, 4)?;
             let mut curv = vec![];
             let count = read_u32_be(data, ptr) as usize;
             ptr += 4;
-            bound_check(data, ptr, count * 2)?;
+            Self::records(data, ptr, count, 2)?;
             for _ in 0..count {
                 curv.push(read_u16_be(data, ptr));
                 ptr += 2;
@@ -737,9 +774,7 @@ impl Data {
             4 => {
                 7
             },
-            _ => {  // Error
-                0
-            },
+            _ => return Err(Error::other("Unsupported curve function")),
         };
         bound_check(data,ptr,num * 4)?;
         for _ in 0..num {
@@ -753,7 +788,7 @@ impl Data {
     }
 
     fn read_formula_curve(data:&[u8]) -> Result<FormulaCurve> {
-        bound_check(data,0,4)?;
+        bound_check(data,0,12)?;
         let mut ptr = 8;
         let funtion_type = read_u16_be(data,ptr);
         ptr += 4;
@@ -769,9 +804,7 @@ impl Data {
             2 => {
                 5
             },
-            _ => {  // Error
-                0
-            },
+            _ => return Err(Error::other("Unsupported curve function")),
         };
         bound_check(data,ptr,num * 4)?;
         for _ in 0..num {
@@ -782,66 +815,160 @@ impl Data {
     }
 
     fn read_localization(data:&[u8],ptr:usize,_version:u32) -> Result<LocalizedUnicode> {
-        let mut ptr = ptr;
         bound_check(data, ptr, 12)?;
-        let _ = read_u32_be(data,ptr);  // MUST 12
-        ptr +=4;
-        let lang = read_ascii_string(data,ptr,2);
-        ptr +=2;
-        let country = read_ascii_string(data,ptr,2);
-        ptr +=2;
-        let name_length = read_u32_be(data,ptr) as usize;
-        ptr +=4;
-        let name_offset = read_u32_be(data,ptr) as usize;
-//        ptr +=4;
-        let mut len = 0;
-        bound_check(data, name_offset, name_length)?;
-        let mut vals = vec![];
-        while len < name_length {
-            let val = read_u16_be(data, name_offset + len);
-            if val == 0 {
-                break;
-            }
-            vals.push(val);
-            len += 2;
-        }
-        let unicode_string = String::from_utf16_lossy(&vals);
-        let mult = LocalizedUnicode {
-            lang,
-            country,
-            unicode_string
-        };
-        Ok(mult)
+        let lang = read_ascii_string(data, ptr, 2);
+        let country = read_ascii_string(data, ptr + 2, 2);
+        let size = read_u32_be(data, ptr + 4) as usize;
+        let offset = read_u32_be(data, ptr + 8) as usize;
+        if size % 2 != 0 { return Err(Error::other("Odd UTF-16 byte length")); }
+        bound_check(data, offset, size)?;
+        let vals: Vec<u16> = data[offset..offset + size].chunks_exact(2)
+            .map(|v| u16::from_be_bytes([v[0], v[1]])).collect();
+        let unicode_string = String::from_utf16(&vals)
+            .map_err(|_| Error::other("Invalid UTF-16"))?;
+        Ok(LocalizedUnicode { lang, country, unicode_string })
     }
 
-    fn read_multi_localization(data:&[u8],ptr:usize,version:u32) -> Result<MultiLocalizedUnicodeType>{
-        let mut ptr = ptr;
-        bound_check(data, ptr, 20)?;
-        let number_of_names = read_u32_be(data,ptr) as usize;
-        ptr +=4;
-        let mut unicode_strings = Vec::with_capacity(number_of_names);
-        for _ in 0..number_of_names {
-            let string =Self::read_localization(data, ptr, version)?;
-            unicode_strings.push(string);
+    fn read_multi_localization(data:&[u8],ptr:usize,version:u32) -> Result<MultiLocalizedUnicodeType> {
+        bound_check(data, ptr, 8)?;
+        let count = read_u32_be(data, ptr) as usize;
+        let stride = read_u32_be(data, ptr + 4) as usize;
+        if stride != 12 { return Err(Error::other("Invalid mluc record size")); }
+        let start = ptr + 8;
+        Self::records(data, start, count, stride)?;
+        let mut unicode_strings = Vec::new();
+        let mut decoded_bytes = 0usize;
+        for i in 0..count {
+            let record = start + i * stride;
+            if (read_u32_be(data, record + 8) as usize) < start + count * stride {
+                return Err(Error::other("mluc string overlaps record table"));
+            }
+            decoded_bytes = decoded_bytes.checked_add(read_u32_be(data, record + 4) as usize)
+                .filter(|&n| n <= data.len().saturating_mul(4))
+                .ok_or_else(|| Error::other("mluc decoded-size limit exceeded"))?;
+            unicode_strings.push(Self::read_localization(data, record, version)?);
         }
-        Ok(MultiLocalizedUnicodeType {
-            unicode_strings
-        })
+        Ok(MultiLocalizedUnicodeType { unicode_strings })
+    }
+
+    fn records(data: &[u8], offset: usize, count: usize, stride: usize) -> Result<()> {
+        let bytes = count.checked_mul(stride).ok_or_else(|| Error::other("ICC count overflow"))?;
+        bound_check(data, offset, bytes)
+    }
+
+    fn segment_size(kind: &str, data: &[u8]) -> Result<usize> {
+        bound_check(data, 0, 12)?;
+        let count = match kind {
+            "parf" => match read_u16_be(data, 8) {
+                0 => 4, 1 | 2 => 5, _ => return Err(Error::other("Unsupported formula function")),
+            },
+            "samf" => read_u32_be(data, 8) as usize,
+            _ => return Err(Error::other("Unsupported curve segment")),
+        };
+        Self::records(data, 12, count, 4)?;
+        Ok(12 + count * 4)
+    }
+
+    fn validate_positions(data: &[u8], table_end: usize, positions: &[PositionNumber], version: u32, depth: usize, curves: bool) -> Result<()> {
+        let mut ranges = Vec::new();
+        for position in positions {
+            let offset = position.offset as usize;
+            let size = position.size as usize;
+            bound_check(data, offset, size)?;
+            if offset < table_end || offset % 4 != 0 || size < 12 {
+                return Err(Error::other("Invalid nested element position"));
+            }
+            ranges.push((offset, offset + size));
+        }
+        ranges.sort_unstable();
+        // ICC permits multiple positions to share one element. Validate each
+        // identical range once, retaining the original public position array.
+        ranges.dedup();
+        if ranges.windows(2).any(|v| v[0].1 > v[1].0) {
+            return Err(Error::other("Overlapping nested element positions"));
+        }
+        for (start, end) in ranges {
+            let nested = &data[start..end];
+            let kind = Self::read_data_type(nested, 0)?;
+            if curves && kind != "curf" { return Err(Error::other("Expected segmented curve")); }
+            if !curves && !matches!(kind.as_str(), "cvst" | "matf") {
+                // CLUT and ACS MPE elements are not implemented by this legacy
+                // decoder. Do not report a successful parsed processing chain.
+                return Err(Error::other("Unsupported MPE element"));
+            }
+            Self::get_nested(&kind, nested, nested.len(), version, depth + 1)?;
+        }
+        Ok(())
+    }
+
+    fn embedded_description(data: &[u8], version: u32, depth: usize) -> Result<(MultiLocalizedUnicodeType, usize)> {
+        let kind = Self::read_data_type(data, 0)?;
+        let size = match kind.as_str() {
+            "mluc" => {
+                bound_check(data, 0, 16)?;
+                let count = read_u32_be(data, 8) as usize;
+                if read_u32_be(data, 12) != 12 { return Err(Error::other("Invalid mluc stride")); }
+                Self::records(data, 16, count, 12)?;
+                let mut end = 16 + count * 12;
+                for i in 0..count {
+                    let size = read_u32_be(data, 20 + i * 12) as usize;
+                    let offset = read_u32_be(data, 24 + i * 12) as usize;
+                    bound_check(data, offset, size)?;
+                    end = end.max(offset + size);
+                }
+                end
+            },
+            "desc" => {
+                bound_check(data, 0, 12)?;
+                let ascii = read_u32_be(data, 8) as usize;
+                bound_check(data, 12, ascii)?;
+                let ptr = 12 + ascii;
+                bound_check(data, ptr, 8)?;
+                let unicode = read_u32_be(data, ptr + 4) as usize;
+                Self::records(data, ptr + 8, unicode, 2)?;
+                let end = ptr + 8 + unicode * 2;
+                // ScriptCode, count and fixed 67-byte Macintosh description.
+                bound_check(data, end, 70)?;
+                if data[end + 2] > 67 { return Err(Error::other("Invalid ScriptCode count")); }
+                end + 70
+            },
+            _ => return Err(Error::other("Unsupported profile description type")),
+        };
+        let decoded = Self::get_nested(&kind, data, size, version, depth + 1)?;
+        let result = match decoded {
+            MultiLocalizedUnicode(value) => value,
+            ASCII(value) => MultiLocalizedUnicodeType::from(value),
+            Descriptor(value) => MultiLocalizedUnicodeType::from(value.ascii_string),
+            _ => return Err(Error::other("Invalid embedded description")),
+        };
+        Ok((result, size))
     }
 
     pub fn get(data_type:&str,data: &[u8],length:usize,version:u32) -> Result<Data> {
+        Self::get_nested(data_type, data, length, version, 0)
+    }
+
+    fn get_nested(data_type:&str,data: &[u8],length:usize,version:u32,depth:usize) -> Result<Data> {
+        if depth > 16 { return Err(Error::other("ICC nesting limit exceeded")); }
+        bound_check(data, 0, length)?;
+        let data = &data[..length];
         let len = length.checked_sub(8).ok_or_else(|| {
             Error::other("ICC tag data shortage")
         })?;
         let mut ptr = 8;
         bound_check(data,ptr, len)?;
+        let stride = match data_type {
+            "XYZ " | "XYZ" => 12, "sf32" | "uf32" | "ui32" => 4,
+            "ui16" => 2, "ui64" => 8, _ => 1,
+        };
+        if len % stride != 0 { return Err(Error::other("Incomplete ICC array element")); }
         match data_type {
             "para" => {
                 let curve = Self::read_parmetic_curve(data)?;
                 if let Curve::ParametricCurve(p_curve) = curve {
                     Ok(ParametricCurve(p_curve))
                 } else {
-                    Ok(None)
+                    Err(Error::other("Expected parametric curve"))
                 }
             },
             "parf" => {
@@ -916,62 +1043,47 @@ impl Data {
                 Ok(Self::ASCII(string))
             },
             "desc" => {
-                if len < 4 {
-                    return Err(Error::other("ICC description data shortage"));
+                bound_check(data, ptr, 4)?;
+                let count = read_u32_be(data, ptr) as usize;
+                ptr += 4;
+                bound_check(data, ptr, count)?;
+                let ascii_string = read_ascii_string(data, ptr, count);
+                ptr += count;
+                // Historical ASCII-only tags remain inspectable. If a legacy
+                // Unicode/ScriptCode tail is present, validate all of it even
+                // when this API returns only the ASCII field.
+                if ptr == data.len() && version < 0x40000000 {
+                    return Ok(ASCII(ascii_string));
                 }
-                if version >= 0x40000000 {
-                    let counts = read_u32_be(data, ptr) as usize;
-                    ptr +=4;
-                    data.get(ptr+4..).and_then(|rest| rest.get(..counts)).ok_or_else(|| {
-                        Error::other("ICC description data shortage")
-                    })?;
-                    bound_check(data,ptr,counts)?;
-                    let ascii_string = read_ascii_string(data, ptr+4,counts);
-                    ptr += counts;
-                    bound_check(data,ptr,8)?;
-                    let lang = read_ascii_string(data, ptr,4);
-                    ptr += 4;
-                    let counts = read_u32_be(data, ptr) as usize;
-                    ptr +=4;
-                    bound_check(data,ptr,counts)?;
-                    // Unicode
-                    let mut len = 0;
-                    let mut vals = vec![];
-                    while len < counts {
-                        let val = read_u16_be(data, ptr);
-                        if val == 0 {
-                        break;
-                        }
-                        vals.push(val);
-                        ptr += 2;
-                        len += 2;
-                    }
-                    let local_string = String::from_utf16_lossy(&vals);
-                    Ok(Descriptor(Descriptor{
-                        ascii_string,
-                        lang,
-                        local_string,
-                        // Macintosh Profile
-                    }))
-                } else {
-                    let ascii_string = read_ascii_string(data, ptr+4,len-4);
-                    Ok(ASCII(ascii_string))
-                }
-            }, 
+                bound_check(data, ptr, 8)?;
+                let lang = read_ascii_string(data, ptr, 4);
+                let count = read_u32_be(data, ptr + 4) as usize;
+                ptr += 8;
+                Self::records(data, ptr, count, 2)?;
+                let vals: Vec<u16> = (0..count).map(|i| read_u16_be(data, ptr + i * 2)).collect();
+                let local_string = String::from_utf16(&vals).map_err(|_| Error::other("Invalid desc UTF-16"))?;
+                ptr += count * 2;
+                bound_check(data, ptr, 70)?;
+                if data[ptr + 2] > 67 { return Err(Error::other("Invalid ScriptCode count")); }
+                if version < 0x40000000 { return Ok(ASCII(ascii_string)); }
+                Ok(Descriptor(Descriptor { ascii_string, lang, local_string }))
+            },
             "chrm" => {
+                bound_check(data, ptr, 4)?;
                 let device_number = read_u16_be(data,ptr);
                 let encoded_value = read_u16_be(data,ptr+2);
                 ptr += 4;
+                Self::records(data, ptr, device_number as usize, 8)?;
                 let mut vals :Vec<(U16Fixed16Number,U16Fixed16Number)> = vec![];
-                while  ptr < length {
+                for _ in 0..device_number {
                     vals.push((
                         U16Fixed16Number{
                             integer: read_u16_be(data, ptr),
                             decimal: read_u16_be(data, ptr+2)
                         },
                         U16Fixed16Number{
-                            integer: read_u16_be(data, ptr+2),
-                            decimal: read_u16_be(data, ptr+4)
+                            integer: read_u16_be(data, ptr+4),
+                            decimal: read_u16_be(data, ptr+6)
                         }));
                     ptr += 8;
                 }
@@ -990,7 +1102,7 @@ impl Data {
 
             },
             "view" => {
-                bound_check(data, ptr, 32)?;
+                bound_check(data, ptr, 28)?;
                 let illuminant = Self::xyz_number(data, ptr)?;
                 ptr += 12;
                 let surround = Self::xyz_number(data, ptr)?;
@@ -1033,7 +1145,7 @@ impl Data {
                 let mut curv = vec![];
                 let count = read_u32_be(data, ptr) as usize;
                 ptr += 4;
-                bound_check(data, ptr, count * 2)?;
+                Self::records(data, ptr, count, 2)?;
                 for _ in 0..count {
                     curv.push(read_u16_be(data, ptr));
                     ptr += 2;
@@ -1041,7 +1153,7 @@ impl Data {
                 Ok(Curve(curv))
             },
             "mft1" | "mft2"  => {         
-                bound_check(data, ptr,52)?;
+                bound_check(data, ptr,40)?;
                 let input_channels= read_byte(data, ptr);
                 ptr +=1;
                 let output_channels = read_byte(data, ptr);
@@ -1060,7 +1172,12 @@ impl Data {
                     ptr += 4;
                 }
 
-                let clut_size = ((number_of_clut_grid_points as u32).pow(input_channels as u32) * output_channels as u32) as usize;
+                if input_channels == 0 || input_channels > 16 || output_channels == 0 || output_channels > 16 {
+                    return Err(Error::other("Invalid LUT channels"));
+                }
+                let clut_size = (number_of_clut_grid_points as usize).checked_pow(input_channels as u32)
+                    .and_then(|v| v.checked_mul(output_channels as usize))
+                    .filter(|&v| v <= data.len()).ok_or_else(|| Error::other("Invalid LUT grid size"))?;
 
                 if data_type == "mft1" {
                     let mut input_table = vec![];
@@ -1143,120 +1260,77 @@ impl Data {
                     Ok(Lut16(mft))
                 }
             },
-            "mBA " | "mAB " => { // no sample 4.0
-                bound_check(data, ptr,32)?;
-
-                let input_channels= read_byte(data, ptr);
-                ptr +=1;
-                let output_channels = read_byte(data, ptr);
-                ptr +=1;
-                ptr +=2; // with skip padding
-                let offset_b_curve = read_u32_be(data, ptr) as usize;
-                ptr +=4;
-                let offset_matrix = read_u32_be(data, ptr) as usize;
-                ptr +=4;
-                let offset_m_curve = read_u32_be(data, ptr) as usize;
-                ptr +=4;
-                let offset_clut = read_u32_be(data, ptr) as usize;
-                ptr +=4;
-                let offset_a_curve = read_u32_be(data, ptr) as usize;
-
-                let mut b_curves = vec![];
-                let mut m_curves = vec![];
-                let mut a_curves = vec![];
-                let mut matrix = vec![];
-
-                let mut ptr = offset_b_curve;
-                for _ in 0..input_channels {
-                    let b_curve = Self::read_parmetic_curve(&data[ptr..])?;
-                    ptr += b_curve.as_size();
-                    b_curves.push(b_curve);
+            "mBA " | "mAB " => {
+                bound_check(data, 0, 32)?;
+                let input_channels = data[8];
+                let output_channels = data[9];
+                if input_channels == 0 || input_channels > 16 || output_channels == 0 || output_channels > 16 {
+                    return Err(Error::other("Invalid mAB/mBA channels"));
                 }
-                let mut ptr = offset_matrix;
-                bound_check(data, ptr,12 *4)?;
-                for _ in 0..12 {
-                    let e = S15Fixed16Number {
-                        integer: read_i16_be(data, ptr),
-                        decimal: read_u16_be(data, ptr+2)
+                let offsets: Vec<usize> = (0..5).map(|i| read_u32_be(data, 12 + i * 4) as usize).collect();
+                let section = |index: usize| -> Result<&[u8]> {
+                    let start = offsets[index];
+                    if start == 0 { return Ok(&[]); }
+                    if start < 32 || start >= data.len() || start % 4 != 0 { return Err(Error::other("Invalid LUT offset")); }
+                    let end = offsets.iter().copied().filter(|&v| v > start).min().unwrap_or(data.len());
+                    data.get(start..end).ok_or_else(|| Error::other("LUT section outside tag"))
+                };
+                let b_count = if data_type == "mAB " { output_channels } else { input_channels };
+                let a_count = if data_type == "mAB " { input_channels } else { output_channels };
+                let curves = |bytes: &[u8], count: u8| -> Result<Vec<Curve>> {
+                    if bytes.is_empty() { return Ok(Vec::new()); }
+                    let mut result = Vec::new();
+                    let mut pos = 0;
+                    for index in 0..count {
+                        let rest = bytes.get(pos..).ok_or_else(|| Error::other("Curve offset outside LUT"))?;
+                        let curve = Self::read_parmetic_curve(rest)?;
+                        pos += curve.as_size();
+                        bound_check(bytes, 0, pos)?;
+                        if index + 1 < count { pos = (pos + 3) & !3; }
+                        result.push(curve);
+                    }
+                    Ok(result)
+                };
+                let b_curves = curves(section(0)?, b_count)?;
+                if b_curves.is_empty() { return Err(Error::other("Missing required B curves")); }
+                let matrix_bytes = section(1)?;
+                let mut matrix = Vec::new();
+                if !matrix_bytes.is_empty() {
+                    bound_check(matrix_bytes, 0, 48)?;
+                    if b_count != 3 { return Err(Error::other("Matrix requires three channels")); }
+                    for i in 0..12 {
+                        matrix.push(S15Fixed16Number { integer: read_i16_be(matrix_bytes, i * 4), decimal: read_u16_be(matrix_bytes, i * 4 + 2) });
+                    }
+                }
+                let m_curves = curves(section(2)?, b_count)?;
+                let bytes = section(3)?;
+                // A zero CLUT offset is the spec's absent stage, represented by
+                // the existing empty MClut type (not a malformed-data fallback).
+                let clut = if bytes.is_empty() {
+                    MClut { grid_points: Vec::new(), precision: 0, clut_data: Clut::UInt8(Vec::new()) }
+                } else {
+                    bound_check(bytes, 0, 20)?;
+                    let grid_points = bytes[..input_channels as usize].to_vec();
+                    let mut count = output_channels as usize;
+                    for &grid in &grid_points {
+                        if grid < 2 { return Err(Error::other("Invalid CLUT grid")); }
+                        count = count.checked_mul(grid as usize).filter(|&n| n <= bytes.len())
+                            .ok_or_else(|| Error::other("CLUT size overflow or shortage"))?;
+                    }
+                    let precision = bytes[16];
+                    let clut_data = match precision {
+                        1 => { bound_check(bytes, 20, count)?; Clut::UInt8(bytes[20..20 + count].to_vec()) },
+                        2 => { Self::records(bytes, 20, count, 2)?;
+                            Clut::UInt16((0..count).map(|i| read_u16_be(bytes, 20 + i * 2)).collect()) },
+                        _ => return Err(Error::other("Invalid CLUT precision")),
                     };
-                    matrix.push(e);
-                    ptr += 4;
-                }
-                let mut ptr = offset_m_curve;
-                for _ in 0..input_channels {
-                    let m_curve = Self::read_parmetic_curve(&data[ptr..])?;
-                    ptr += m_curve.as_size();
-                    m_curves.push(m_curve);
-                }
-                let mut ptr = offset_clut;
-                bound_check(data, ptr,16)?;
-
-                let mut grid_points = vec![];
-                let mut clut_size = output_channels as usize;
-                for i in 0..16 {
-                    let grid_point = read_byte(&data,ptr+i);
-                    if grid_point > 0 {
-                        clut_size *= grid_point as usize;
-                    } else {
-                        break;
-                    }
-                    grid_points.push(grid_point);
-                }
-                ptr += 16;
-                let precision = read_byte(&data,ptr);
-                ptr += 4;   // with padding
-                let clut_data = if precision == 1 {
-                    let mut clut_entries:Vec<u8> = vec![];
-                    bound_check(data, ptr,clut_size)?;
-                    for _ in 0..clut_size {
-                        clut_entries.push(read_byte(data, ptr));
-                        ptr += 1;
-                    }
-                    Clut::UInt8(clut_entries)
-                } else {
-                    let mut clut_entries:Vec<u16> = vec![];
-                    bound_check(data, ptr,clut_size * 2)?;
-                    for _ in 0..clut_size {
-                        clut_entries.push(read_u16_be(data, ptr));
-                        ptr += 2;
-                    }
-                    Clut::UInt16(clut_entries)
+                    MClut { grid_points, precision, clut_data }
                 };
-
-                let clut = MClut {
-                    grid_points,
-                    precision,
-                    clut_data,
-                };
-
-                let mut ptr = offset_a_curve;
-                for _ in 0..input_channels {
-                    let a_curve = Self::read_parmetic_curve(&data[ptr..])?;
-                    ptr += a_curve.as_size();
-                    a_curves.push(a_curve);
-                }
+                let a_curves = curves(section(4)?, a_count)?;
                 if data_type == "mBA " {
-
-                    Ok(LutBtoA(Mba{
-                        input_channels,
-                        output_channels,
-                        b_curves,
-                        matrix,
-                        m_curves,
-                        clut,
-                        a_curves,
-                    }))
+                    Ok(LutBtoA(Mba { input_channels, output_channels, b_curves, matrix, m_curves, clut, a_curves }))
                 } else {
-                    Ok(LutAtoB(Mab{
-                        input_channels,
-                        output_channels,
-                        b_curves,
-                        matrix,
-                        m_curves,
-                        clut,
-                        a_curves,
-                    }))
-
+                    Ok(LutAtoB(Mab { input_channels, output_channels, b_curves, matrix, m_curves, clut, a_curves }))
                 }
             },
             "rcs2" => {
@@ -1264,15 +1338,20 @@ impl Data {
                 let number_of_channels = read_u16_be(data, ptr);
                 ptr += 2;
                 let count_of_measirement_types = read_u16_be(data, ptr);
+                ptr += 2;
+                Self::records(data, ptr, count_of_measirement_types as usize, 4)?;
                 let mut count_relative_offsets = vec![];
                 for _ in 0..count_of_measirement_types {
                     count_relative_offsets.push(read_u32_be(data, ptr));
                     ptr += 4;
                 }
+                let table_end = ptr;
+                let mut expanded = 0usize;
                 let mut response_curve_structures = vec![];
                 for offset in count_relative_offsets {
                     let mut offset = offset as usize;
-                    bound_check(data, offset, number_of_channels as usize * (4 + 12 + 8) + 4)?;
+                    if offset < table_end { return Err(Error::other("Response offset overlaps table")); }
+                    bound_check(data, offset, number_of_channels as usize * (4 + 12) + 4)?;
                     let signature = read_u32_be(data,offset);
                     offset += 4;
                     let mut for_each_channel = vec![];
@@ -1288,7 +1367,13 @@ impl Data {
                         patch_with_the_maximum_colorant_value.push(val);                        
                     }
                     let mut response_arrays = vec![];
-                    for _ in 0..number_of_channels {
+                    let responses = for_each_channel.iter().try_fold(0usize, |sum, &n| sum.checked_add(n as usize))
+                        .ok_or_else(|| Error::other("Response count overflow"))?;
+                    Self::records(data, offset, responses, 8)?;
+                    expanded = expanded.checked_add(number_of_channels as usize * 16 + responses * 8 + 4)
+                        .filter(|&n| n <= data.len().saturating_mul(4))
+                        .ok_or_else(|| Error::other("Response decoded-size limit exceeded"))?;
+                    for _ in 0..responses {
                         let encoding_the_interval = read_u16_be(data, offset);
                         offset += 2;
                         let reserved = read_u16_be(data, offset);
@@ -1319,7 +1404,7 @@ impl Data {
             },
             "crdi" => {
                 let mut strings = vec![];
-                while ptr < length {
+                for _ in 0..5 {
                     bound_check(data, ptr, 4)?;
                     let strlen = read_u32_be(data, ptr) as usize;
                     ptr += 4;
@@ -1350,30 +1435,24 @@ impl Data {
                 bound_check(data, ptr, 4)?;
                 let counts = read_u32_be(data, ptr) as usize;
                 ptr += 4;
-                let count  = read_u32_be(data, ptr) as usize;
-                bound_check(data, ptr, count)?;
+                bound_check(data, ptr, counts)?;
                 let raw = read_bytes_as_vec(data, ptr, counts);
                 Ok(UInt8NumberArray(raw))
             },
             "clrt" => {
-                bound_check(data, ptr, 38)?;
+                bound_check(data, ptr, 4)?;
                 let counts = read_u32_be(data, ptr) as usize;
                 ptr += 4;
-                let colorant_name = read_ascii_string(data, ptr, 32);
-                ptr += 32;
-                bound_check(data, ptr, counts*6)?;
-                let mut pcs_values: Vec<[u16;3]> = Vec::with_capacity(counts);
+                Self::records(data, ptr, counts, 38)?;
+                // The public legacy type has one name; retain the first name,
+                // but read every PCS triple at the actual 38-byte record stride.
+                let colorant_name = if counts == 0 { String::new() } else { read_ascii_string(data, ptr, 32) };
+                let mut pcs_values = Vec::new();
                 for _ in 0..counts {
-                    let mut pcs = [0_u16;3];
-                    pcs[0] = read_u16_be(data, ptr);
-                    pcs[1] = read_u16_be(data, ptr+2);
-                    pcs[2] = read_u16_be(data, ptr+4);
-                    ptr += 6;
-                    pcs_values.push(pcs);
+                    pcs_values.push([read_u16_be(data, ptr + 32), read_u16_be(data, ptr + 34), read_u16_be(data, ptr + 36)]);
+                    ptr += 38;
                 }
-
-                Ok(ColorantTable(ColorantTableType{colorant_name,pcs_values}))
-
+                Ok(ColorantTable(ColorantTableType { colorant_name, pcs_values }))
             },
             "mpet" => {
                 bound_check(data, ptr, 8)?;
@@ -1381,7 +1460,7 @@ impl Data {
                 let output_channels = read_u16_be(data, ptr+2);
                 let counts = read_u32_be(data, ptr+4) as usize;
                 ptr += 8;
-                bound_check(data, ptr, counts*8)?;
+                Self::records(data, ptr, counts, 8)?;
                 let mut process_element_positions = Vec::with_capacity(counts);
                 for _ in 0..counts {
                     let offset = read_u32_be(data, ptr);
@@ -1389,6 +1468,7 @@ impl Data {
                     ptr += 8;
                     process_element_positions.push(PositionNumber{offset,size});
                 }
+                Self::validate_positions(data, ptr, &process_element_positions, version, depth, false)?;
                 let data = read_bytes_as_vec(data,ptr,length - ptr);
 
                 Ok(MultiProcessElements(
@@ -1406,7 +1486,7 @@ impl Data {
                 let output_channels = read_u16_be(data, ptr+2);
                 let counts = input_channels as usize;
                 ptr += 4;
-                bound_check(data, ptr, counts*8)?;
+                Self::records(data, ptr, counts, 8)?;
                 let mut curve_positions = Vec::with_capacity(counts);
                 for _ in 0..counts {
                     let offset = read_u32_be(data, ptr);
@@ -1414,6 +1494,8 @@ impl Data {
                     ptr += 8;
                     curve_positions.push(PositionNumber{offset,size});
                 }
+                if input_channels != output_channels { return Err(Error::other("Curve-set channel mismatch")); }
+                Self::validate_positions(data, ptr, &curve_positions, version, depth, true)?;
                 let data = read_bytes_as_vec(data,ptr,length - ptr);
 
                 Ok(CurveSet(
@@ -1425,36 +1507,35 @@ impl Data {
                     }
                 ))
             },
-            "curf" => { // 4.x
+            "curf" => {
                 bound_check(data, ptr, 4)?;
                 let segments = read_u16_be(data, ptr);
-                ptr += 4;   // skip
-                let counts = segments as usize - 1;
-                let mut dimensional_curves = Vec::with_capacity(segments as usize);
-                for _ in 0..segments as usize {
-                    bound_check(data, ptr, counts*4)?;
-                    let mut  break_points = Vec::with_capacity(counts);
-                    for _ in 0..counts {
-                        let float = read_f32(data, ptr, Endian::BigEndian);
-                        ptr += 4;
-                        break_points.push(float);
-                    }
-                    if ptr + counts * 4 > length {break}
-                    dimensional_curves.push(break_points);
+                ptr += 4;
+                let counts = (segments as usize).checked_sub(1).ok_or_else(|| Error::other("Zero curve segments"))?;
+                Self::records(data, ptr, counts, 4)?;
+                let break_points: Vec<f32> = (0..counts).map(|i| read_f32(data, ptr + i * 4, Endian::BigEndian)).collect();
+                ptr += counts * 4;
+                if break_points.iter().any(|v| !v.is_finite()) || break_points.windows(2).any(|v| v[0] > v[1]) {
+                    return Err(Error::other("Invalid curve breakpoints"));
                 }
-
-                Ok(OneDimenstionalCurves(
-                    OneDimensionalCurvesType {
-                        segments,
-                        dimensional_curves,
+                // Legacy output exposes breakpoint data only; segment payloads
+                // are validated here, not mistaken for additional breakpoint sets.
+                for i in 0..segments {
+                    let kind = Self::read_data_type(data, ptr)?;
+                    let size = Self::segment_size(&kind, &data[ptr..])?;
+                    if (i == 0 || i + 1 == segments) && kind != "parf" {
+                        return Err(Error::other("Outer curve segment must be formula"));
                     }
-                ))
+                    Self::get_nested(&kind, &data[ptr..], size, version, depth + 1)?;
+                    ptr += size;
+                }
+                Ok(OneDimenstionalCurves(OneDimensionalCurvesType { segments, dimensional_curves: vec![break_points] }))
             },
             "samf" => { // 4.x
                 bound_check(data, ptr, 4)?;
-                let counts = read_u16_be(data, ptr) as usize;
+                let counts = read_u32_be(data, ptr) as usize;
                 ptr += 4;   // skip
-                bound_check(data, ptr, counts * 4)?;
+                Self::records(data, ptr, counts, 4)?;
                 let mut curve_entries = vec![];
                 for _ in 0..counts {
                     let float = read_f32(data, ptr, Endian::BigEndian);
@@ -1469,7 +1550,7 @@ impl Data {
                 let output_channels = read_u16_be(data, ptr+2);
                 ptr += 4;
                 let counts = (input_channels as usize + 1) * output_channels as usize;
-                bound_check(data, ptr, counts*4)?;
+                Self::records(data, ptr, counts, 4)?;
                 let mut matrix = vec![];
                 for _ in 0..counts {
                     let float = read_f32(data, ptr, Endian::BigEndian);
@@ -1479,7 +1560,7 @@ impl Data {
                 Ok(MatrixElement(MatrixElement{input_channels,output_channels,matrix}))
             },
             "ncl2" => { // ncol obsolute
-                bound_check(data, ptr, 122)?;
+                bound_check(data, ptr, 76)?;
                 let vendor_specific_flag = read_u32_be(data, ptr);
                 ptr += 4;
                 let counts = read_u32_be(data, ptr) as usize;
@@ -1490,6 +1571,9 @@ impl Data {
                 ptr += 32;
                 let suffix_color_name = read_ascii_string(data, ptr,32);
                 ptr += 32;
+                let stride = number_device_coordinates.checked_mul(2).and_then(|n| n.checked_add(38))
+                    .ok_or_else(|| Error::other("Named color stride overflow"))?;
+                Self::records(data, ptr, counts, stride)?;
                 let mut entries = vec![];
                 for _ in 0..counts {
                     bound_check(data, ptr, number_device_coordinates * 2 + 32 + 6)?;
@@ -1519,71 +1603,24 @@ impl Data {
                 }))
             }
             "pseq" => {
-                bound_check(data,ptr,4)?;
-                let counts = read_u32_be(data, ptr) as usize;
+                bound_check(data, ptr, 4)?;
+                let count = read_u32_be(data, ptr) as usize;
                 ptr += 4;
-                bound_check(data,ptr,counts)?;
-                let mut remain = length - ptr;
-                let mut profiles = vec![];
-                for _ in 0..counts {
-                    bound_check(data,ptr,20)?;
-                    if remain == 0 {break;}
+                Self::records(data, ptr, count, 20 + 16 + 16)?;
+                let mut profiles = Vec::new();
+                for _ in 0..count {
+                    bound_check(data, ptr, 20)?;
                     let device_manufacturer = read_u32_be(data, ptr);
-                    ptr += 4;
-                    let device_model = read_u32_be(data, ptr);
-                    ptr += 4;
-                    let device_attributes = read_ascii_string(data, ptr,8);
-                    ptr += 8;
-                    let technology_information = read_u32_be(data, ptr);
-                    ptr += 4;
-                    remain -=20;
-                    let _tag = read_u32_be(data, ptr); // dmnd
-                    ptr += 4;
-                    let len = read_u32_be(data, ptr) as usize;
-                    ptr += 4;
-                    bound_check(data, ptr, len)?;
-                    let (_,res) = Self::parse(&data[ptr..],len, version)?;
-                    let description_device_manufacturer;
-                    match res {
-                        ASCII(text) => {
-                            description_device_manufacturer = MultiLocalizedUnicodeType::from(text);
-
-                        },
-                        MultiLocalizedUnicode(mlut) => {
-                            description_device_manufacturer = mlut;
-                        }
-                        _ => {
-                            description_device_manufacturer = MultiLocalizedUnicodeType::from("".to_string());
-                        }
-                    }
-                    ptr += len;
-                    let _tag = read_u32_be(data, ptr); // dmnd
-                    ptr += 4;
-                    let len = read_u32_be(data, ptr) as usize;
-                    ptr += 4;
-                    bound_check(data, ptr, len)?;
-                    let (_,res) = Self::parse(&data[ptr..],len, version)?;
-                    let description_device_model;
-                    match res {
-                        ASCII(text) => {
-                            description_device_model = MultiLocalizedUnicodeType::from(text);
-
-                        },
-                        MultiLocalizedUnicode(mlut) => {
-                            description_device_model = mlut;
-                        }
-                        _ => {
-                            description_device_model = MultiLocalizedUnicodeType::from("".to_string());
-                        }
-                    }
-                    profiles.push(ProfileDescription{
-                        device_manufacturer,
-                        device_model,
-                        device_attributes,
-                        technology_information,
-                        description_device_manufacturer,
-                        description_device_model,
-                    })
+                    let device_model = read_u32_be(data, ptr + 4);
+                    let device_attributes = read_ascii_string(data, ptr + 8, 8);
+                    let technology_information = read_u32_be(data, ptr + 16);
+                    ptr += 20;
+                    let (description_device_manufacturer, size) = Self::embedded_description(&data[ptr..], version, depth)?;
+                    ptr += size;
+                    let (description_device_model, size) = Self::embedded_description(&data[ptr..], version, depth)?;
+                    ptr += size;
+                    profiles.push(ProfileDescription { device_manufacturer, device_model, device_attributes,
+                        technology_information, description_device_manufacturer, description_device_model });
                 }
                 Ok(ProfileDescription(profiles))
             }

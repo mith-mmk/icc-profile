@@ -268,7 +268,7 @@ fn cmyk_bpc_workers_atomicity_and_algorithm_clones() {
                     .worker()
                     .transform_f32_atomic(&input, &mut out)
                     .unwrap();
-                for p in out.chunks_exact(3) {
+                for p in out.as_chunks::<3>().0.iter() {
                     close(p, &oracle([0.8; 4], lab, is_tri, false));
                 }
                 let mut integer = vec![0u16; n * 3];
@@ -277,7 +277,7 @@ fn cmyk_bpc_workers_atomicity_and_algorithm_clones() {
                     .transform_u16_atomic(&vec![52428; n * 4], &mut integer)
                     .unwrap();
                 let e = oracle([0.8; 4], lab, is_tri, false).map(|v| (v * 65535.0).round() as i32);
-                for p in integer.chunks_exact(3) {
+                for p in integer.as_chunks::<3>().0.iter() {
                     for i in 0..3 {
                         assert!((p[i] as i32 - e[i]).abs() <= 1);
                     }

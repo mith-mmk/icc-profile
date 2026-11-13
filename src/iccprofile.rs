@@ -865,7 +865,9 @@ impl Data {
         }
         bound_check(data, offset, size)?;
         let vals: Vec<u16> = data[offset..offset + size]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|v| u16::from_be_bytes([v[0], v[1]]))
             .collect();
         let unicode_string =

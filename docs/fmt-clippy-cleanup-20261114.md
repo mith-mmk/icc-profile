@@ -32,3 +32,11 @@ This is an independent cleanup branch, not a merge or publication.
 Ignored external fixtures and opt-in comparisons were not represented as
 coverage. Package verification and the exact pushed-SHA Actions outcome must
 be checked independently; no command in this cleanup publishes the crate.
+
+## CI toolchain follow-up
+
+The initial run passed all four test matrix jobs but its Rust 1.100 quality
+job identified the newer `chunks_exact_to_as_chunks` lint (local stable was
+1.97). Constant-size chunk loops now use `as_chunks` with the same complete
+chunk/remainder behavior, supported by the declared MSRV. A follow-up run
+must verify the final pushed commit, rather than reusing the first result.

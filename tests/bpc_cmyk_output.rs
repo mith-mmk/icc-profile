@@ -248,8 +248,16 @@ fn chunks_workers_integers_and_atomic_late_failures() {
     t.transform_u8(&vec![64; 3 * 137], &mut bytes).unwrap();
     let mut words = vec![0; 4 * 137];
     w.transform_u16(&vec![16384; 3 * 137], &mut words).unwrap();
-    assert!(bytes.chunks_exact(4).all(|p| p[3] > 0 && p[..3] == [0; 3]));
-    assert!(words.chunks_exact(4).all(|p| p[3] > 0 && p[..3] == [0; 3]));
+    assert!(bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .all(|p| p[3] > 0 && p[..3] == [0; 3]));
+    assert!(words
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .all(|p| p[3] > 0 && p[..3] == [0; 3]));
 }
 #[test]
 fn admission_boundaries_and_route_rejection() {

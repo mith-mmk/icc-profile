@@ -175,7 +175,7 @@ fn matrix_bpc_strict_workers_algorithms_and_atomic_boundaries() {
         assert_eq!(output, other);
         clone.transform_f32_atomic(&input, &mut other).unwrap();
         assert_eq!(output, other);
-        for p in output.chunks_exact(3) {
+        for p in output.as_chunks::<3>().0.iter() {
             close(p, &oracle([0.2, 0.4, 0.7], src, dst, false));
         }
         for max in [255.0f32, 65535.0] {
@@ -203,7 +203,7 @@ fn matrix_bpc_strict_workers_algorithms_and_atomic_boundaries() {
                     false,
                 )
                 .map(|v| (v * max).round() as i32);
-                for p in out.chunks_exact(3) {
+                for p in out.as_chunks::<3>().0.iter() {
                     for i in 0..3 {
                         assert!((p[i] as i32 - expected[i]).abs() <= 1);
                     }

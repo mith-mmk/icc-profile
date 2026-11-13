@@ -2930,7 +2930,7 @@ fn cmyk_output_chunks_workers_and_late_errors_are_atomic() {
                     [0.25, 0.5, 0.75].map(|v| v * 32768.0 / 65535.0),
                     interpolation == ClutInterpolation3D::Trilinear,
                 );
-                for pixel in output.chunks_exact(4) {
+                for pixel in output.as_chunks::<4>().0.iter() {
                     for i in 0..4 {
                         assert!((pixel[i] - expected[i]).abs() < 3e-6);
                     }
@@ -2966,7 +2966,7 @@ fn cmyk_output_chunks_workers_and_late_errors_are_atomic() {
                     } else {
                         out16.clone()
                     };
-                    for pixel in actual.chunks_exact(4) {
+                    for pixel in actual.as_chunks::<4>().0.iter() {
                         for i in 0..4 {
                             assert!((pixel[i] as i32 - expected[i] as i32).abs() <= 1);
                         }
@@ -3311,7 +3311,7 @@ fn cmyk_absolute_output_four_channel_chunks_and_late_failure_are_atomic() {
                     .unwrap();
                 let expected =
                     cmyk_absolute_output_oracle([0.2, 0.3, 0.4], version, pcs, white, false);
-                for pixel in output.chunks_exact(4) {
+                for pixel in output.as_chunks::<4>().0.iter() {
                     for i in 0..4 {
                         assert!((pixel[i] - expected[i]).abs() < 4e-6);
                     }
@@ -3346,7 +3346,7 @@ fn cmyk_absolute_output_four_channel_chunks_and_late_failure_are_atomic() {
                             false,
                         )
                         .map(|v| (v * denom).round() as u16);
-                        for pixel in output_codes.chunks_exact(4) {
+                        for pixel in output_codes.as_chunks::<4>().0.iter() {
                             for i in 0..4 {
                                 assert!((pixel[i] as i32 - expected[i] as i32).abs() <= 1);
                             }
@@ -3701,7 +3701,7 @@ fn cmyk_perceptual_output_chunk_workers_and_late_errors_are_atomic() {
                         [0.2, 0.4, 0.7],
                         interpolation == ClutInterpolation3D::Trilinear,
                     );
-                    for p in output.chunks_exact(4) {
+                    for p in output.as_chunks::<4>().0.iter() {
                         for i in 0..4 {
                             assert!((p[i] - expected[i]).abs() < 4e-6);
                         }
@@ -3736,7 +3736,7 @@ fn cmyk_perceptual_output_chunk_workers_and_late_errors_are_atomic() {
                                 interpolation == ClutInterpolation3D::Trilinear,
                             )
                             .map(|v| (v * denom).round() as i32);
-                            for p in result.chunks_exact(4) {
+                            for p in result.as_chunks::<4>().0.iter() {
                                 for i in 0..4 {
                                     assert!((p[i] as i32 - expected[i]).abs() <= 1);
                                 }
@@ -4034,7 +4034,7 @@ fn cmyk_saturation_output_chunk_workers_and_late_errors_are_atomic() {
                         [0.2, 0.4, 0.7],
                         interpolation == ClutInterpolation3D::Trilinear,
                     );
-                    for p in output.chunks_exact(4) {
+                    for p in output.as_chunks::<4>().0.iter() {
                         for i in 0..4 {
                             assert!((p[i] - expected[i]).abs() < 4e-6);
                         }
@@ -4069,7 +4069,7 @@ fn cmyk_saturation_output_chunk_workers_and_late_errors_are_atomic() {
                                 interpolation == ClutInterpolation3D::Trilinear,
                             )
                             .map(|v| (v * denom).round() as i32);
-                            for p in result.chunks_exact(4) {
+                            for p in result.as_chunks::<4>().0.iter() {
                                 for i in 0..4 {
                                     assert!((p[i] as i32 - expected[i]).abs() <= 1);
                                 }

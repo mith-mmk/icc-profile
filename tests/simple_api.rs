@@ -248,9 +248,14 @@ fn reverse_bt709_buffer_matches_every_scalar_pixel() {
     let input = [0, 128, 128, 255, 255, 255, 90, 10, 240, 170, 190, 25];
     let output = ycbcr8_full_to_rgb8_buffer(&input, YcbcrCoefficients::Bt709).unwrap();
     assert_eq!(output.len(), input.len());
-    for (pixel, converted) in input.chunks_exact(3).zip(output.chunks_exact(3)) {
+    for (pixel, converted) in input
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(output.as_chunks::<3>().0.iter())
+    {
         assert_eq!(
-            converted,
+            *converted,
             ycbcr8_full_to_rgb8([pixel[0], pixel[1], pixel[2]], YcbcrCoefficients::Bt709)
         );
     }

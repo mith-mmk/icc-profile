@@ -98,7 +98,7 @@ fn buffer<T: Copy>(
         });
     }
     let mut result = reserve(input.len())?;
-    for pixel in input.chunks_exact(3) {
+    for pixel in input.as_chunks::<3>().0.iter() {
         result.extend_from_slice(&convert([pixel[0], pixel[1], pixel[2]])?);
     }
     Ok(result)

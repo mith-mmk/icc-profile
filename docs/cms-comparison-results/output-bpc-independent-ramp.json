@@ -1,0 +1,48 @@
+[
+  {
+    "profile": "CGATS21_CRPC6.icc",
+    "initial_lab": [
+      10.806439071893692,
+      0,
+      0
+    ],
+    "device_black_percent": [
+      84.40375328063965,
+      75.18577575683594,
+      60.18310785293579,
+      99.9664306640625
+    ],
+    "ramp_range": [
+      10.798809677362442,
+      99.99847412109375
+    ],
+    "method": "initial",
+    "shadow_points": 0,
+    "coefficients": null,
+    "estimated_lstar": 10.806439071893692,
+    "estimated_y": 0.01234080280222011
+  },
+  {
+    "profile": "PSOcoated_v3.icc",
+    "initial_lab": [
+      14.512868225574493,
+      0,
+      0
+    ],
+    "device_black_percent": [
+      91.73266291618347,
+      63.51568102836609,
+      44.71961557865143,
+      96.00061178207397
+    ],
+    "ramp_range": [
+      14.612439274787903,
+      100.0
+    ],
+    "method": "initial",
+    "shadow_points": 0,
+    "coefficients": null,
+    "estimated_lstar": 14.512868225574493,
+    "estimated_y": 0.018200156931820175
+  }
+]

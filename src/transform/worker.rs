@@ -2,13 +2,20 @@ use super::compile::Transform;
 use super::error::TransformError;
 
 const CHUNK_PIXELS: usize = 64;
-const MAX_CHANNELS: usize = 3;
+const SCRATCH_VALUES: usize = 192;
 
 pub struct TransformWorker {
     pub(super) transform: Transform,
 }
 
 impl TransformWorker {
+    /// Numerical choices inherited when this worker was created.
+    pub fn algorithm_profile(&self) -> super::algorithm::AlgorithmProfile {
+        self.transform.algorithm_profile()
+    }
+
+    /// One-pass execution; a late error may leave output partially updated.
+    /// Use `transform_f32_atomic` for unchanged output on every error.
     pub fn transform_f32(
         &mut self,
         input: &[f32],
@@ -17,16 +24,45 @@ impl TransformWorker {
         self.transform.transform_f32(input, output)
     }
 
+    /// See [`Transform::transform_f32_atomic`] for the unchanged-on-error,
+    /// fixed-scratch, two-pass execution contract.
+    pub fn transform_f32_atomic(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), TransformError> {
+        self.transform.transform_f32_atomic(input, output)
+    }
+
+    /// Already transactional; every returned error leaves output unchanged.
     pub fn transform_u8(&mut self, input: &[u8], output: &mut [u8]) -> Result<(), TransformError> {
         transform_u8(&self.transform, input, output)
     }
 
+    /// Already transactional; every returned error leaves output unchanged.
     pub fn transform_u16(
         &mut self,
         input: &[u16],
         output: &mut [u16],
     ) -> Result<(), TransformError> {
         transform_u16(&self.transform, input, output)
+    }
+    /// Transactional alias; same fixed scratch and two passes as `transform_u8`.
+    pub fn transform_u8_atomic(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<(), TransformError> {
+        self.transform_u8(input, output)
+    }
+
+    /// Transactional alias; same fixed scratch and two passes as `transform_u16`.
+    pub fn transform_u16_atomic(
+        &mut self,
+        input: &[u16],
+        output: &mut [u16],
+    ) -> Result<(), TransformError> {
+        self.transform_u16(input, output)
     }
 }
 
@@ -73,22 +109,25 @@ where
     transform.validate_buffer_lengths(input.len(), output.len())?;
     let input_channels = transform.input_channels();
     let output_channels = transform.output_channels();
-    if input_channels > MAX_CHANNELS || output_channels > MAX_CHANNELS {
+    if input_channels > 4 || output_channels > 4 {
         return Err(TransformError::UnsupportedProfileFeature(
-            "worker supports at most three channels",
+            "worker supports at most four input and output channels",
         ));
     }
     let pixels = input.len() / input_channels;
-    let mut input_chunk = [0.0f32; CHUNK_PIXELS * MAX_CHANNELS];
-    let mut output_chunk = [0.0f32; CHUNK_PIXELS * MAX_CHANNELS];
+    let chunk_pixels = CHUNK_PIXELS
+        .min(SCRATCH_VALUES / input_channels)
+        .min(SCRATCH_VALUES / output_channels);
+    let mut input_chunk = [0.0f32; SCRATCH_VALUES];
+    let mut output_chunk = [0.0f32; SCRATCH_VALUES];
 
     // Validate every chunk before publishing any output. This retains the
     // old caller-output-on-error contract without an image-sized temporary.
     // The first pass validates every chunk. The second pass publishes the
     // already-validated results, preserving the caller output on any error.
     for publish in [false, true] {
-        for pixel_start in (0..pixels).step_by(CHUNK_PIXELS) {
-            let count = (pixels - pixel_start).min(CHUNK_PIXELS);
+        for pixel_start in (0..pixels).step_by(chunk_pixels) {
+            let count = (pixels - pixel_start).min(chunk_pixels);
             let input_count = count * input_channels;
             let output_count = count * output_channels;
             let input_offset = pixel_start * input_channels;

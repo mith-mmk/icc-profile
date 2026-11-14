@@ -96,6 +96,50 @@ pub(super) fn plan_route_with_policy(
             "only Gray/RGB transforms are supported",
         ));
     }
+    if profile.color_space() == super::profile::ColorSpace::Cmyk {
+        let version = profile.raw_version()[0];
+        let kind = tag.and_then(|data| data.get(..4));
+        if a_to_b {
+            let supported = (version == 2 && kind == Some(&b"mft2"[..]))
+                || (version == 4 && kind == Some(&b"mAB "[..]));
+            let absolute = intent == RenderingIntent::AbsoluteColorimetric;
+            if !supported
+                || (absolute
+                    && (owner_policy != OwnerPolicy::TransformStage
+                        || selection.signature != Some(*b"A2B1")
+                        || selection.used_fallback
+                        || profile.raw_device_class() != *b"prtr"))
+            {
+                return Err(TransformError::UnsupportedProfileFeature(
+                    "CMYK requires v2 mft2 or v4 mAB DeviceToPcs; absolute requires an explicit printer A2B1 composite route",
+                ));
+            }
+        } else {
+            let colorimetric = ((version == 2 && kind == Some(&b"mft2"[..]))
+                || (version == 4 && kind == Some(&b"mBA "[..])))
+                && selection.signature == Some(*b"B2A1")
+                && (intent == RenderingIntent::RelativeColorimetric
+                    || (intent == RenderingIntent::AbsoluteColorimetric
+                        && owner_policy == OwnerPolicy::TransformStage));
+            let perceptual = version == 4
+                && kind == Some(&b"mBA "[..])
+                && selection.signature == Some(*b"B2A0")
+                && intent == RenderingIntent::Perceptual;
+            let saturation = version == 4
+                && kind == Some(&b"mBA "[..])
+                && selection.signature == Some(*b"B2A2")
+                && intent == RenderingIntent::Saturation;
+            if !(colorimetric || perceptual || saturation)
+                || profile.raw_device_class() != *b"prtr"
+                || selection.used_fallback
+            {
+                return Err(TransformError::UnsupportedProfileFeature(
+                    "CMYK output requires explicit printer B2A1 for colorimetric or v4 mBA B2A0/B2A2 for perceptual/saturation; absolute is composite-only",
+                ));
+            }
+        }
+    }
+
     let expected_channels = if a_to_b { (channels, 3) } else { (3, channels) };
     let model = if tag.is_some() {
         RouteModel::Lut

@@ -1,165 +1,323 @@
-
 use crate::cms::transration::*;
 use crate::Mft2;
+use std::io::Result;
 
-pub fn cmyk_to_rgb(y:u8,m:u8,c:u8,k:u8) -> (u8,u8,u8) {
+pub fn cmyk_to_rgb(y: u8, m: u8, c: u8, k: u8) -> (u8, u8, u8) {
     let r = (c as i16 + k as i16 - 255).clamp(0, 255) as u8;
     let g = (m as i16 + k as i16 - 255).clamp(0, 255) as u8;
     let b = (y as i16 + k as i16 - 255).clamp(0, 255) as u8;
-    (r,g,b)
+    (r, g, b)
 }
 
-pub fn cmyk_to_rgb_lut16(c:u8,m:u8,y:u8,k:u8,lut:&Mft2,wp:&WhitePoint) -> (u8,u8,u8) {
-    let (l,a,b) = cmyk_to_lab_lut16(y,m,c,k,lut);
-    let (x,y,z) = lab_to_xyz_wp(l,a,b,wp);
-    let (r,g,b) = xyz_to_rgb(x as f64,y as f64,z as f64);
-
-    (r,g,b)
+/// Compatibility wrapper for [`try_cmyk_to_rgb_lut16`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
+pub fn cmyk_to_rgb_lut16(c: u8, m: u8, y: u8, k: u8, lut: &Mft2, wp: &WhitePoint) -> (u8, u8, u8) {
+    try_cmyk_to_rgb_lut16(c, m, y, k, lut, wp).expect("Invalid legacy LUT conversion input")
 }
 
-pub fn cmyk_to_rgb_lut8(c:u8,m:u8,y:u8,k:u8,lut:&Mft1,wp:&WhitePoint) -> (u8,u8,u8) {
-    let (l,a,b) = cmyk_to_lab_lut8(y,m,c,k,lut);
-    let (x,y,z) = lab_to_xyz_wp(l,a,b,wp);
-    let (r,g,b) = xyz_to_rgb(x as f64,y as f64,z as f64);
-
-    (r,g,b)
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_cmyk_to_rgb_lut16(
+    c: u8,
+    m: u8,
+    y: u8,
+    k: u8,
+    lut: &Mft2,
+    wp: &WhitePoint,
+) -> Result<(u8, u8, u8)> {
+    super::lut_convert::check_whitepoint(wp)?;
+    let (l, a, b) = try_cmyk_to_lab_lut16(c, m, y, k, lut)?;
+    let (x, y, z) = lab_to_xyz_wp(l, a, b, wp);
+    checked_xyz_to_rgb(x, y, z)
 }
 
+/// Compatibility wrapper for [`try_cmyk_to_rgb_lut8`].
+///
+/// # Panics
+/// Panics on invalid LUT payloads or invalid numeric inputs. Use the checked API to return errors.
+pub fn cmyk_to_rgb_lut8(c: u8, m: u8, y: u8, k: u8, lut: &Mft1, wp: &WhitePoint) -> (u8, u8, u8) {
+    try_cmyk_to_rgb_lut8(c, m, y, k, lut, wp).expect("Invalid legacy LUT conversion input")
+}
 
-pub fn cmyk_to_rgb_from_profile(c:u8,m:u8,y:u8,k:u8,decoded:&DecodedICCProfile) -> (u8,u8,u8) {
-    if decoded.color_space == 0x434d594b {  // CMYK
-        let lut = decoded.tags.get("A2B0");
+/// Checked legacy conversion with unchanged encoded units and matrix semantics.
+///
+/// Returns [`std::io::ErrorKind::InvalidInput`] for malformed LUT payloads or invalid numeric inputs.
+pub fn try_cmyk_to_rgb_lut8(
+    c: u8,
+    m: u8,
+    y: u8,
+    k: u8,
+    lut: &Mft1,
+    wp: &WhitePoint,
+) -> Result<(u8, u8, u8)> {
+    super::lut_convert::check_whitepoint(wp)?;
+    let (l, a, b) = try_cmyk_to_lab_lut8(c, m, y, k, lut)?;
+    let (x, y, z) = lab_to_xyz_wp(l, a, b, wp);
+    checked_xyz_to_rgb(x, y, z)
+}
+
+// Preserve the legacy matrix and rounding, but reject overflow before integer casts.
+fn checked_xyz_to_rgb(x: f64, y: f64, z: f64) -> Result<(u8, u8, u8)> {
+    let invalid = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Non-finite RGB conversion intermediate",
+        )
+    };
+    if ![x, y, z].iter().all(|v| v.is_finite()) {
+        return Err(invalid());
+    }
+    let (r, g, b) = xyz_to_rgb_to_f64(x, y, z);
+    if ![r, g, b].iter().all(|v| v.is_finite()) {
+        return Err(invalid());
+    }
+    // Clip finite out-of-gamut values before scaling to avoid overflow in *255.
+    // For finite values this equals the legacy scale/cast/clamp sequence.
+    let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+    Ok((byte(r), byte(g), byte(b)))
+}
+
+/// Checked **legacy approximation**, not an ICC color-managed transform.
+///
+/// Supports output-class CMYK profiles with Lab PCS, v2/v4 headers, a D50
+/// header illuminant and an explicit A2B0 LUT8. CMYK byte order is C,M,Y,K.
+/// The inherited bridge uses historical Lab byte coding
+/// and linear RGB matrix, without sRGB transfer or D50/D65 adaptation. The
+/// header illuminant is not the media white point (`wtpt`). LUT16 is rejected
+/// because its legacy Lab encoding cannot be represented by this byte bridge.
+/// Use original profile bytes with [`crate::Profile`] and [`crate::Transform`]
+/// for checked color management. No unsupported or malformed input falls back.
+pub fn try_cmyk_to_rgb_from_profile(
+    c: u8,
+    m: u8,
+    y: u8,
+    k: u8,
+    decoded: &DecodedICCProfile,
+) -> std::io::Result<(u8, u8, u8)> {
+    check_legacy_profile(decoded)?;
+    match decoded.tags.get("A2B0") {
+        Some(Data::Lut8(lut)) => {
+            try_cmyk_to_rgb_lut8(c, m, y, k, lut, &WhitePoint::from_profile(decoded))
+        }
+        _ => Err(unsupported_profile(
+            "Checked legacy bridge requires explicit A2B0 LUT8",
+        )),
+    }
+}
+
+/// Compatibility-only approximate conversion. Prefer
+/// [`try_cmyk_to_rgb_from_profile`] for checked metadata and explicit errors.
+/// The historical route checks only CMYK color space and an A2B0 LUT tag;
+/// it does not enforce PCS, version, class or D50 metadata. Fallback is retained
+/// only for non-CMYK profiles, missing tags or unsupported tag types. It calls
+/// `cmyk_to_rgb(c,m,y,k)` despite that function's legacy `(y,m,c,k)` signature.
+///
+/// # Panics
+/// Panics when a selected LUT or numeric bridge is invalid. Such failures do
+/// not silently substitute fallback colors. The retained LUT16 bridge remains
+/// approximate and does not implement ICC Lab16 coding.
+pub fn cmyk_to_rgb_from_profile(
+    c: u8,
+    m: u8,
+    y: u8,
+    k: u8,
+    decoded: &DecodedICCProfile,
+) -> (u8, u8, u8) {
+    if decoded.color_space == u32::from_be_bytes(*b"CMYK") {
         let wp = WhitePoint::from_profile(decoded);
-        if let Some(lut) = lut {
-            match lut {
-                Data::Lut16(lut16) => {
-                    return cmyk_to_rgb_lut16(c,m,y,k,lut16,&wp)
-                },
-                Data::Lut8(lut8) => {
-                    return cmyk_to_rgb_lut8(c,m,y,k,lut8,&wp)
-
-                },
-                _ => {
-                }
+        match decoded.tags.get("A2B0") {
+            Some(Data::Lut8(lut)) => {
+                return try_cmyk_to_rgb_lut8(c, m, y, k, lut, &wp)
+                    .expect("Invalid legacy profile LUT8 or color bridge")
             }
+            Some(Data::Lut16(lut)) => {
+                return try_cmyk_to_rgb_lut16(c, m, y, k, lut, &wp)
+                    .expect("Invalid legacy profile LUT16 or color bridge")
+            }
+            _ => {}
         }
     }
-    // not has profile
     cmyk_to_rgb(c, m, y, k)
 }
+/// Checked **legacy approximation**, not an ICC color-managed transform.
+///
+/// Requires output-class CMYK, Lab PCS, v2/v4, a D50 header illuminant and an
+/// explicit B2A0 LUT8. RGB bytes retain the old linear-matrix interpretation:
+/// no sRGB decoding or chromatic adaptation is performed. The historical Lab
+/// encoding uses -127..127 chroma and quantizes to bytes before LUT evaluation.
+/// All LUT stages, including the legacy three-channel matrix, are evaluated;
+/// that matrix behavior is not the ICC Lab-PCS matrix rule. These limitations
+/// make this an approximation even for accepted profiles. No `wtpt` is read.
+/// LUT16 and other routes return Unsupported; malformed LUT8 returns InvalidInput.
+/// Use original bytes with [`crate::Profile`] and [`crate::Transform`] for color
+/// management rather than assuming this checked approximation is ICC-accurate.
+pub fn try_rgb_to_cmyk_from_profile(
+    r: u8,
+    g: u8,
+    b: u8,
+    decoded: &DecodedICCProfile,
+) -> std::io::Result<(u8, u8, u8, u8)> {
+    check_legacy_profile(decoded)?;
+    match decoded.tags.get("B2A0") {
+        Some(Data::Lut8(lut)) => {
+            let input = checked_legacy_lab_bytes(legacy_rgb_lab(r, g, b, decoded))?;
+            try_d3_to_d4_lut8(input[0], input[1], input[2], lut)
+        }
+        _ => Err(unsupported_profile(
+            "Checked legacy bridge requires explicit B2A0 LUT8",
+        )),
+    }
+}
 
-/// RGB → CMYK 簡易版 (近傍探索による逆LUT参照)
-/// 実装: RGB → XYZ → Lab → CMYK (B2A0 Lut逆参照)
-pub fn rgb_to_cmyk_from_profile(r:u8,g:u8,b:u8,decoded:&DecodedICCProfile) -> (u8,u8,u8,u8) {
-    if decoded.color_space == 0x434d594b {  // CMYK
-        // RGB → XYZ (sRGB 行列)
-        let (x, y, z) = rgb_to_xyz_from_f64(
-            r as f64 / 255.0,
-            g as f64 / 255.0,
-            b as f64 / 255.0
-        );
-        
-        // XYZ → Lab (D65 白点)
-        let wp = WhitePoint::from_profile(decoded);
-        let (l, a_val, b_val) = xyz_to_lab_wp(x, y, z, &wp);
-        
-        // Lab → CMYK (B2A0 Lut 逆参照 - 近傍探索)
-        let lut = decoded.tags.get("B2A0");
-        if let Some(lut) = lut {
-            match lut {
-                Data::Lut8(lut8) => {
-                    // Lut8: input [0..256] per channel, 3D CLUT, output 4D
-                    // 近傍探索: Lab を グリッド座標に正規化し、CLUT から最も近い CMYK を探す
-                    let l_norm = (l / 100.0 * 255.0).clamp(0.0, 255.0) as u8;
-                    let a_norm = ((a_val + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8;
-                    let b_norm = ((b_val + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8;
-                    
-                    // Lut8の CLUT を直接参照（グリッドポイント）
-                    // 簡易版: 入力値を 33 グリッド（標準解像度）にマップしてCLUT参照
-                    if let Some((c, m, y_out, k)) = lab_to_cmyk_via_lut8(l_norm, a_norm, b_norm, lut8) {
-                        return (c, m, y_out, k);
-                    }
-                },
-                Data::Lut16(lut16) => {
-                    let l_norm = (l / 100.0 * 65535.0).clamp(0.0, 65535.0) as u16;
-                    let a_norm = ((a_val + 127.0) / 254.0 * 65535.0).clamp(0.0, 65535.0) as u16;
-                    let b_norm = ((b_val + 127.0) / 254.0 * 65535.0).clamp(0.0, 65535.0) as u16;
-                    
-                    if let Some((c, m, y_out, k)) = lab_to_cmyk_via_lut16(l_norm, a_norm, b_norm, lut16) {
-                        return (c, m, y_out, k);
-                    }
-                },
-                _ => {}
+/// Compatibility-only approximate conversion. Prefer
+/// [`try_rgb_to_cmyk_from_profile`] for checked metadata and explicit errors.
+/// Historical admission checks only CMYK and a B2A0 LUT tag, not PCS, version,
+/// class or D50 metadata. Fallback is retained only for non-CMYK, missing or
+/// unsupported tags, or the historical nearest CLUT node being absent. That
+/// availability check does not sample a color: valid routes now evaluate all
+/// matrix/input/interpolated-CLUT/output stages, intentionally changing results.
+/// The LUT16 route still quantizes input to bytes and lacks ICC Lab16 coding.
+///
+/// # Panics
+/// Zero grid, non-finite color bridge values, or other selected LUT validation
+/// failures panic explicitly instead of silently substituting fallback colors.
+pub fn rgb_to_cmyk_from_profile(
+    r: u8,
+    g: u8,
+    b: u8,
+    decoded: &DecodedICCProfile,
+) -> (u8, u8, u8, u8) {
+    if decoded.color_space == u32::from_be_bytes(*b"CMYK") {
+        let lab = legacy_rgb_lab(r, g, b, decoded);
+        match decoded.tags.get("B2A0") {
+            Some(Data::Lut8(lut)) => {
+                if historical_reverse_node_present(
+                    lab,
+                    lut.number_of_clut_grid_points,
+                    lut.clut_values.len(),
+                    false,
+                ) {
+                    let input = checked_legacy_lab_bytes(lab)
+                        .expect("Non-finite legacy profile color bridge");
+                    return try_d3_to_d4_lut8(input[0], input[1], input[2], lut)
+                        .expect("Invalid legacy profile LUT8");
+                }
             }
+            Some(Data::Lut16(lut))
+                if historical_reverse_node_present(
+                    lab,
+                    lut.number_of_clut_grid_points,
+                    lut.clut_values.len(),
+                    true,
+                ) =>
+            {
+                let input =
+                    checked_legacy_lab_bytes(lab).expect("Non-finite legacy profile color bridge");
+                let (c, m, y, k) = try_d3_to_d4_lut16(input[0], input[1], input[2], lut)
+                    .expect("Invalid legacy profile LUT16");
+                return (
+                    (c / 257.0).round() as u8,
+                    (m / 257.0).round() as u8,
+                    (y / 257.0).round() as u8,
+                    (k / 257.0).round() as u8,
+                );
+            }
+            _ => {}
         }
     }
-    // フォールバック: RGB を単純に CMYK に変換（逆色）
-    let k = 255 - ((r as u16 + g as u16 + b as u16) / 3) as u8;
-    let c = 255 - r;
-    let m_out = 255 - g;
-    let y_out = 255 - b;
-    (c, m_out, y_out, k)
+    (
+        255 - r,
+        255 - g,
+        255 - b,
+        255 - ((r as u16 + g as u16 + b as u16) / 3) as u8,
+    )
 }
 
-/// Lut8 経由で Lab → CMYK (近傍探索)
-fn lab_to_cmyk_via_lut8(l: u8, a: u8, b: u8, lut: &Mft1) -> Option<(u8, u8, u8, u8)> {
-    // グリッドポイント数（通常33×33×33）
-    let grid_size = lut.number_of_clut_grid_points as usize;
-    
-    // L, A, B を グリッド座標 [0..grid_size-1] にマップ
-    let l_grid = (l as f64 / 255.0 * (grid_size - 1) as f64).round() as usize;
-    let a_grid = (a as f64 / 255.0 * (grid_size - 1) as f64).round() as usize;
-    let b_grid = (b as f64 / 255.0 * (grid_size - 1) as f64).round() as usize;
-    
-    let l_grid = l_grid.min(grid_size - 1);
-    let a_grid = a_grid.min(grid_size - 1);
-    let b_grid = b_grid.min(grid_size - 1);
-    
-    // CLUT からインデックスを計算 (4出力の場合)
-    // Index = ((l*size + a)*size + b) * 4
-    let clut_idx = ((l_grid * grid_size + a_grid) * grid_size + b_grid) * 4;
-    
-    // CLUT が十分なサイズを持つか確認
-    if clut_idx + 3 >= lut.clut_values.len() {
-        return None;
+// Preserve precisely the old short-CLUT fallback decision, including its old
+// float-to-integer saturation. Never use this nearest node for color evaluation.
+// New shape/finite checks happen before the actual evaluator, not as fallback.
+fn historical_reverse_node_present(lab: (f64, f64, f64), grid: u8, len: usize, wide: bool) -> bool {
+    let grid = grid as usize;
+    let last = grid
+        .checked_sub(1)
+        .expect("Invalid legacy profile zero grid");
+    let max = if wide { 65535.0 } else { 255.0 };
+    let encoded = [
+        lab.0 / 100.0,
+        (lab.1 + 127.0) / 254.0,
+        (lab.2 + 127.0) / 254.0,
+    ]
+    .map(|v| {
+        if wide {
+            (v * max).clamp(0.0, max) as u16 as f64
+        } else {
+            (v * max).clamp(0.0, max) as u8 as f64
+        }
+    });
+    let mut node = 0usize;
+    for value in encoded {
+        let coordinate = ((value / max * last as f64).round() as usize).min(last);
+        node = node
+            .checked_mul(grid)
+            .and_then(|v| v.checked_add(coordinate))
+            .expect("Legacy profile CLUT index overflow");
     }
-    
-    // CLUT から CMYK を取得 (4バイト = C, M, Y, K)
-    let c = lut.clut_values[clut_idx];
-    let m = lut.clut_values[clut_idx + 1];
-    let y_out = lut.clut_values[clut_idx + 2];
-    let k = lut.clut_values[clut_idx + 3];
-    
-    Some((c, m, y_out, k))
+    node.checked_mul(4)
+        .and_then(|v| v.checked_add(3))
+        .expect("Legacy profile CLUT index overflow")
+        < len
 }
 
-/// Lut16 経由で Lab → CMYK (近傍探索)
-fn lab_to_cmyk_via_lut16(l: u16, a: u16, b: u16, lut: &Mft2) -> Option<(u8, u8, u8, u8)> {
-    // グリッドポイント数
-    let grid_size = lut.number_of_clut_grid_points as usize;
-    
-    // L, A, B を グリッド座標にマップ
-    let l_grid = (l as f64 / 65535.0 * (grid_size - 1) as f64).round() as usize;
-    let a_grid = (a as f64 / 65535.0 * (grid_size - 1) as f64).round() as usize;
-    let b_grid = (b as f64 / 65535.0 * (grid_size - 1) as f64).round() as usize;
-    
-    let l_grid = l_grid.min(grid_size - 1);
-    let a_grid = a_grid.min(grid_size - 1);
-    let b_grid = b_grid.min(grid_size - 1);
-    
-    // CLUT からインデックスを計算 (4出力の場合、各2バイト)
-    let clut_idx = ((l_grid * grid_size + a_grid) * grid_size + b_grid) * 4;
-    
-    // CLUT が十分なサイズを持つか確認
-    if clut_idx + 3 >= lut.clut_values.len() {
-        return None;
+fn checked_legacy_lab_bytes(lab: (f64, f64, f64)) -> std::io::Result<[u8; 3]> {
+    if [lab.0, lab.1, lab.2].iter().any(|v| !v.is_finite()) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Non-finite legacy profile color bridge",
+        ));
     }
-    
-    // CLUT から CMYK を取得 (各値は u16 → u8 に変換)
-    let c = (lut.clut_values[clut_idx] >> 8) as u8;
-    let m = (lut.clut_values[clut_idx + 1] >> 8) as u8;
-    let y_out = (lut.clut_values[clut_idx + 2] >> 8) as u8;
-    let k = (lut.clut_values[clut_idx + 3] >> 8) as u8;
-    
-    Some((c, m, y_out, k))
+    Ok([
+        (lab.0 / 100.0 * 255.0).clamp(0.0, 255.0) as u8,
+        ((lab.1 + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8,
+        ((lab.2 + 127.0) / 254.0 * 255.0).clamp(0.0, 255.0) as u8,
+    ])
+}
+fn unsupported_profile(message: &'static str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Unsupported, message)
+}
+
+fn check_legacy_profile(decoded: &DecodedICCProfile) -> std::io::Result<()> {
+    use crate::ICCNumber;
+    if decoded.color_space != u32::from_be_bytes(*b"CMYK")
+        || decoded.pcs != u32::from_be_bytes(*b"Lab ")
+        || decoded.device_class != u32::from_be_bytes(*b"prtr")
+        || !matches!(decoded.version >> 24, 2 | 4)
+    {
+        return Err(unsupported_profile(
+            "Legacy bridge requires v2/v4 CMYK output profile with Lab PCS",
+        ));
+    }
+    let white = [
+        decoded.illuminate.x.as_f64(),
+        decoded.illuminate.y.as_f64(),
+        decoded.illuminate.z.as_f64(),
+    ];
+    // Allow two fixed-point steps, including the historical decoder's 65535 divisor.
+    if white
+        .iter()
+        .zip([0.9642, 1.0, 0.8249])
+        .any(|(v, w)| (*v - w).abs() > 2.0 / 65535.0)
+    {
+        return Err(unsupported_profile(
+            "Legacy bridge requires a D50 PCS header illuminant",
+        ));
+    }
+    Ok(())
+}
+
+fn legacy_rgb_lab(r: u8, g: u8, b: u8, decoded: &DecodedICCProfile) -> (f64, f64, f64) {
+    let (x, y, z) = rgb_to_xyz_from_f64(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+    xyz_to_lab_wp(x, y, z, &WhitePoint::from_profile(decoded))
 }

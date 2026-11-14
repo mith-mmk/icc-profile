@@ -1,3 +1,8 @@
+//! Nonempty batch conversions reject nonfinite custom matrices and arithmetic
+//! results with `InvalidInput`; finite outputs retain their existing clipping.
+//! Output reservation failures are returned as errors.
+//! Empty batches do not evaluate the matrix. Legacy scalar tuple APIs are unchecked.
+//!
 //! YUV (YCbCr) to RGB color space conversion
 //!
 //! This module provides conversion functions from YUV/YCbCr color space to RGB.
@@ -31,8 +36,8 @@
 //! ```
 
 use crate::cms::ColorMatrix3D;
+use crate::utils::checked_batch_len;
 use std::io::Result;
-use std::io::{Error, ErrorKind};
 
 /// YUV to RGB conversion coefficient presets
 ///
@@ -70,38 +75,26 @@ impl YUVToRGBCoefficient {
                 let cbg = -0.34414;
                 let crg = -0.71414;
                 let cbb = 1.772;
-                ColorMatrix3D::from(
-                    &[1.0, 0.0, crr,
-                     1.0, cbg, crg,
-                     1.0, cbb, 0.0]).unwrap()
-            },
+                ColorMatrix3D::from(&[1.0, 0.0, crr, 1.0, cbg, crg, 1.0, cbb, 0.0]).unwrap()
+            }
             YUVToRGBCoefficient::Pal => {
                 let crr = 1.1398;
                 let cbg = -0.39465;
                 let crg = -0.5806;
                 let cbb = 2.03211;
-                ColorMatrix3D::from(
-                    &[1.0, 0.0, crr,
-                     1.0, cbg, crg,
-                     1.0, cbb, 0.0]).unwrap()
-            },
+                ColorMatrix3D::from(&[1.0, 0.0, crr, 1.0, cbg, crg, 1.0, cbb, 0.0]).unwrap()
+            }
             YUVToRGBCoefficient::Bt709 => {
                 let crr = 1.5748;
                 let cbg = -0.187324;
                 let crg = -0.468124;
                 let cbb = 1.8556;
-                ColorMatrix3D::from(
-                    &[1.0, 0.0, crr,
-                     1.0, cbg, crg,
-                     1.0, cbb, 0.0]).unwrap()
-            },
-            YUVToRGBCoefficient::Other(matrix) => {
-                matrix.clone()
+                ColorMatrix3D::from(&[1.0, 0.0, crr, 1.0, cbg, crg, 1.0, cbb, 0.0]).unwrap()
             }
+            YUVToRGBCoefficient::Other(matrix) => matrix.clone(),
         }
     }
 }
-
 
 /// Convert a single YUV pixel to RGB using BT.601 standard
 ///
@@ -113,7 +106,7 @@ impl YUVToRGBCoefficient {
 /// * `y` - Luma (brightness) component [0-255]
 /// * `cb` - Chroma blue component [0-255]
 ///   - Value 128 represents neutral (no blue difference)
-///   - Values < 128: more blue, > 128: more yellow
+///   - Values < 128: more yellow, > 128: more blue
 /// * `cr` - Chroma red component [0-255]
 ///   - Value 128 represents neutral (no red difference)
 ///   - Values < 128: more cyan, > 128: more red
@@ -132,11 +125,11 @@ impl YUVToRGBCoefficient {
 /// ```
 pub fn yuv_to_rgb(y: u8, cb: u8, cr: u8) -> (u8, u8, u8) {
     let matrix = YUVToRGBCoefficient::Bt601.get();
-    let (r,g,b) = matrix.convert_3d(y as f64, cb as f64 - 128.0, cr as f64 - 128.0);
+    let (r, g, b) = matrix.convert_3d(y as f64, cb as f64 - 128.0, cr as f64 - 128.0);
     let r = (r + 0.5).clamp(0.0, 255.0) as u8;
     let g = (g + 0.5).clamp(0.0, 255.0) as u8;
     let b = (b + 0.5).clamp(0.0, 255.0) as u8;
-    (r,g,b)
+    (r, g, b)
 }
 
 /// Convert a single YUV pixel to RGB with custom coefficient standard
@@ -162,13 +155,12 @@ pub fn yuv_to_rgb(y: u8, cb: u8, cr: u8) -> (u8, u8, u8) {
 /// ```
 pub fn yuv_to_rgb_with_mode(y: u8, cb: u8, cr: u8, mode: &YUVToRGBCoefficient) -> (u8, u8, u8) {
     let matrix = mode.get();
-    let (r,g,b) = matrix.convert_3d(y as f64, cb as f64 - 128.0, cr as f64 - 128.0);
+    let (r, g, b) = matrix.convert_3d(y as f64, cb as f64 - 128.0, cr as f64 - 128.0);
     let r = (r + 0.5).clamp(0.0, 255.0) as u8;
     let g = (g + 0.5).clamp(0.0, 255.0) as u8;
     let b = (b + 0.5).clamp(0.0, 255.0) as u8;
-    (r,g,b)
+    (r, g, b)
 }
-
 
 /// Batch convert YUV pixel buffer to RGB
 ///
@@ -197,21 +189,26 @@ pub fn yuv_to_rgb_with_mode(y: u8, cb: u8, cr: u8, mode: &YUVToRGBCoefficient) -
 /// let rgb = yuv_to_rgb_entries(&yuv, 3, &YUVToRGBCoefficient::Bt601)?;
 /// // rgb = [128, 128, 128, 255, 255, 255, 0, 0, 0]
 /// ```
-pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries * 3 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+pub fn yuv_to_rgb_entries(
+    buf: &[u8],
+    entries: usize,
+    mode: &YUVToRGBCoefficient,
+) -> Result<Vec<u8>> {
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 3)?;
     let matrix = mode.get();
 
-    let mut buffer = Vec::with_capacity(entries * 3);
+    let mut buffer = Vec::new();
+    buffer
+        .try_reserve_exact(output_len)
+        .map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
-        let y  = buf[ptr] as f64;
+        let y = buf[ptr] as f64;
         let cb = buf[ptr + 1] as f64 - 128.0;
         let cr = buf[ptr + 2] as f64 - 128.0;
 
-        let (r,g,b) = matrix.convert_3d(y, cb, cr);
+        let (r, g, b) = matrix.try_convert_3d(y, cb, cr)?;
         let r = (r + 0.5).clamp(0.0, 255.0) as u8;
         let g = (g + 0.5).clamp(0.0, 255.0) as u8;
         let b = (b + 0.5).clamp(0.0, 255.0) as u8;
@@ -226,10 +223,9 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
 
 /// Convert YUV pixel buffer to RGBA (with alpha channel)
 ///
-/// Converts YUV pixels to RGBA format, preserving original Y value as alpha.
-/// Useful for video with alpha blending support.
+/// Converts YUV pixels to RGBA format with opaque alpha (255).
 /// Input format: [Y1, Cb1, Cr1, Y2, Cb2, Cr2, ...]
-/// Output format: [R1, G1, B1, A1, R2, G2, B2, A2, ...] where A=Y
+/// Output format: [R1, G1, B1, A1, R2, G2, B2, A2, ...] where A=255
 ///
 /// # Arguments
 ///
@@ -239,25 +235,30 @@ pub fn yuv_to_rgb_entries(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient
 ///
 /// # Returns
 ///
-/// RGBA data where alpha channel equals the Y (luma) value
+/// RGBA data where alpha is always 255 (opaque)
 ///
 /// # Errors
 ///
 /// Returns error if `buf.len() < entries * 3`
-pub fn yuv_to_rgba_entries_from_yuv(buf: &[u8], entries: usize, mode: &YUVToRGBCoefficient) -> Result<Vec<u8>> {
-    if buf.len() < entries * 3 {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
-    }
+pub fn yuv_to_rgba_entries_from_yuv(
+    buf: &[u8],
+    entries: usize,
+    mode: &YUVToRGBCoefficient,
+) -> Result<Vec<u8>> {
+    let output_len = checked_batch_len::<u8>(buf.len(), entries, 3, 4)?;
     let matrix = mode.get();
-    let mut buffer = Vec::with_capacity(entries * 4);
+    let mut buffer = Vec::new();
+    buffer
+        .try_reserve_exact(output_len)
+        .map_err(std::io::Error::other)?;
 
     for i in 0..entries {
         let ptr = i * 3;
-        let y  = buf[ptr] as f64;
+        let y = buf[ptr] as f64;
         let cb = buf[ptr + 1] as f64 - 128.0;
         let cr = buf[ptr + 2] as f64 - 128.0;
 
-        let (r,g,b) = matrix.convert_3d(y, cb, cr);
+        let (r, g, b) = matrix.try_convert_3d(y, cb, cr)?;
         let r = (r + 0.5).clamp(0.0, 255.0) as u8;
         let g = (g + 0.5).clamp(0.0, 255.0) as u8;
         let b = (b + 0.5).clamp(0.0, 255.0) as u8;

@@ -4,6 +4,7 @@
 //! A compiled LUT owns only validated numbers and is immutable, so a
 //! `Transform` remains `Send + Sync` and worker scratch stays per caller.
 
+use super::algorithm::ClutInterpolation3D;
 use std::mem::size_of;
 
 use super::compile_budget::CompileBudget;
@@ -80,8 +81,13 @@ impl LutTransform {
             MFT1 | MFT2 | MAB | MBA => {
                 let input = usize::from(data[8]);
                 let output = usize::from(data[9]);
-                validate_channels(input)?;
-                validate_channels(output)?;
+                let kind = be_u32(data, 0)?;
+                let cmyk_source = input == 4 && output == 3 && matches!(kind, MFT2 | MAB);
+                let cmyk_destination = input == 3 && output == 4 && matches!(kind, MFT2 | MBA);
+                if !cmyk_source && !cmyk_destination {
+                    validate_channels(input)?;
+                    validate_channels(output)?;
+                }
                 Ok((input, output))
             }
             _ => Err(TransformError::UnsupportedProfileFeature("LUT tag type")),
@@ -159,6 +165,7 @@ impl LutTransform {
         input: &[f32],
         output: &mut [f32],
         clamp: bool,
+        interpolation: ClutInterpolation3D,
     ) -> Result<(), TransformError> {
         if input.len() != self.input_channels || output.len() != self.output_channels {
             return Err(TransformError::InvalidBufferLength {
@@ -174,7 +181,7 @@ impl LutTransform {
                 "LUT input is outside the normalized domain".into(),
             ));
         }
-        let mut normalized = [0.0; 3];
+        let mut normalized = [0.0; 4];
         normalized[..input.len()].copy_from_slice(input);
         if clamp {
             for value in &mut normalized[..input.len()] {
@@ -189,9 +196,9 @@ impl LutTransform {
                 clut,
                 output: ot,
             } => {
-                let mut v = [0.0; 3];
-                if self.input_channels == 1 {
-                    v[0] = input[0];
+                let mut v = [0.0; 4];
+                if self.input_channels != 3 {
+                    v[..input.len()].copy_from_slice(input);
                 } else {
                     for r in 0..3 {
                         v[r] = matrix[r][0] * input[0]
@@ -199,7 +206,7 @@ impl LutTransform {
                             + matrix[r][2] * input[2];
                     }
                 }
-                let mut values = [0.0; 3];
+                let mut values = [0.0; 4];
                 for c in 0..self.input_channels {
                     values[c] = table_eval(
                         &it[c],
@@ -207,11 +214,12 @@ impl LutTransform {
                         clamp,
                     )?;
                 }
-                let mut clut_out = [0.0; 3];
+                let mut clut_out = [0.0; 4];
                 clut.eval(
                     &values[..self.input_channels],
                     &mut clut_out[..clut.channels],
                     clamp,
+                    interpolation,
                 )?;
                 for c in 0..self.output_channels {
                     output[c] = table_eval(&ot[c], clut_out[c], clamp)?;
@@ -225,13 +233,18 @@ impl LutTransform {
                 b,
                 reverse,
             } => {
-                let mut values = [0.0; 3];
+                let mut values = [0.0; 4];
                 values[..input.len()].copy_from_slice(input);
                 if !*reverse {
                     apply_curves(a, &mut values[..input.len()], clamp)?;
                     if let Some(clut) = clut {
-                        let mut next = [0.0; 3];
-                        clut.eval(&values[..input.len()], &mut next[..clut.channels], clamp)?;
+                        let mut next = [0.0; 4];
+                        clut.eval(
+                            &values[..input.len()],
+                            &mut next[..clut.channels],
+                            clamp,
+                            interpolation,
+                        )?;
                         values = next;
                     }
                     apply_curves(
@@ -248,9 +261,14 @@ impl LutTransform {
                     clip_values(&mut values[..m.len().min(3)], clamp)?;
                     apply_curves(m, &mut values[..m.len()], clamp)?;
                     if let Some(clut) = clut {
-                        let mut next = [0.0; 3];
+                        let mut next = [0.0; 4];
                         let clut_input = m.len().max(input.len());
-                        clut.eval(&values[..clut_input], &mut next[..clut.channels], clamp)?;
+                        clut.eval(
+                            &values[..clut_input],
+                            &mut next[..clut.channels],
+                            clamp,
+                            interpolation,
+                        )?;
                         values = next;
                     }
                     apply_curves(a, &mut values[..a.len()], clamp)?;
@@ -692,7 +710,13 @@ fn clip_values(values: &mut [f32], clamp: bool) -> Result<(), TransformError> {
 }
 
 impl Clut {
-    fn eval(&self, input: &[f32], output: &mut [f32], clamp: bool) -> Result<(), TransformError> {
+    fn eval(
+        &self,
+        input: &[f32],
+        output: &mut [f32],
+        clamp: bool,
+        interpolation: ClutInterpolation3D,
+    ) -> Result<(), TransformError> {
         if input.iter().any(|value| !value.is_finite()) {
             return Err(TransformError::NonFiniteInput);
         }
@@ -701,7 +725,7 @@ impl Clut {
                 "CLUT input is outside the normalized domain".into(),
             ));
         }
-        let mut normalized = [0.0; 3];
+        let mut normalized = [0.0; 4];
         normalized[..input.len()].copy_from_slice(input);
         if clamp {
             for value in &mut normalized[..input.len()] {
@@ -709,6 +733,41 @@ impl Clut {
             }
         }
         let input = &normalized[..input.len()];
+        if self.grid.len() == 4 {
+            // Multilinear interpolation over every one of the 16 hypercube
+            // corners. ICC CLUT ordering has the first input axis slowest.
+            let mut lower = [0usize; 4];
+            let mut fraction = [0.0f32; 4];
+            for axis in 0..4 {
+                let position = input[axis] * (self.grid[axis] - 1) as f32;
+                lower[axis] = (position.floor() as usize).min(self.grid[axis] - 2);
+                fraction[axis] = position - lower[axis] as f32;
+            }
+            output.fill(0.0);
+            for corner in 0..16 {
+                let mut weight = 1.0;
+                let mut index = 0;
+                for axis in 0..4 {
+                    let upper = (corner >> axis) & 1;
+                    weight *= if upper == 0 {
+                        1.0 - fraction[axis]
+                    } else {
+                        fraction[axis]
+                    };
+                    index = index * self.grid[axis] + lower[axis] + upper;
+                }
+                for (channel, value) in output[..self.channels].iter_mut().enumerate() {
+                    *value += weight * self.values[index * self.channels + channel];
+                }
+            }
+            // Table entries and weights are normalized. A convex combination
+            // is in [0,1]; contain f32 summation roundoff without relaxing the
+            // strict input-domain checks above.
+            for value in output.iter_mut().take(self.channels) {
+                *value = value.clamp(0.0, 1.0);
+            }
+            return Ok(());
+        }
         if self.grid.len() == 1 {
             let p =
                 input.first().copied().unwrap_or(0.0).clamp(0.0, 1.0) * (self.grid[0] - 1) as f32;
@@ -741,6 +800,26 @@ impl Clut {
             x[1] - i1[1] as f32,
             x[2] - i1[2] as f32,
         ];
+        if interpolation == ClutInterpolation3D::Trilinear {
+            output.fill(0.0);
+            for corner in 0..8 {
+                let mut weight = 1.0;
+                let mut point = i1;
+                for axis in 0..3 {
+                    let upper = (corner >> axis) & 1;
+                    point[axis] += upper;
+                    weight *= if upper == 0 { 1.0 - f[axis] } else { f[axis] };
+                }
+                let index = self.index(point) * self.channels;
+                for (channel, value) in output[..self.channels].iter_mut().enumerate() {
+                    *value += weight * self.values[index + channel];
+                }
+            }
+            for value in output.iter_mut().take(self.channels) {
+                *value = value.clamp(0.0, 1.0);
+            }
+            return Ok(());
+        }
         let (weight, corner) = if f[0] >= f[1] {
             if f[1] >= f[2] {
                 (

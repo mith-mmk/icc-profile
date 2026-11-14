@@ -1,57 +1,100 @@
 use crate::{ICCNumber, ParametricCurve};
-use std::io::{Error,ErrorKind};
+use std::io::{Error, ErrorKind};
 
-pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:ParametricCurve) -> Result<Vec<u8>, Error>{
+/// Evaluate the legacy byte-domain parametric curve helper.
+///
+/// Input bytes are used directly as `x` in `0..=255`, not normalized ICC
+/// coordinates. Finite results are rounded and clamped to a byte; for example,
+/// type 0 with gamma 2 maps 128 to 255. Unknown function types remain identity.
+/// Empty batches succeed without evaluating or validating the curve.
+///
+/// # Errors
+///
+/// Returns an error for short input, missing coefficients, a zero divisor `a`
+/// in types 1 or 2, or a nonfinite evaluated result (including invalid real
+/// power domains and overflow), or an output reservation failure.
+/// Types 3 and 4 do not divide by `a` and may use
+/// zero `a` when the selected branch yields a finite result.
+pub fn transration_prametic_curve(
+    buf: &[u8],
+    entry: usize,
+    prametic_curve: ParametricCurve,
+) -> Result<Vec<u8>, Error> {
     if buf.len() < entry {
-        return Err(Error::new(ErrorKind::Other, "Data shotage"))
+        return Err(Error::other("Data shotage"));
     }
-    let mut p = vec![];
-    for val in prametic_curve.vals {
-        p.push(val.as_f64())
+    // Empty batches historically accept even incomplete curves without evaluating them.
+    if entry == 0 {
+        return Ok(Vec::new());
     }
-    let mut data = vec![];
- 
-    for i in 0..entry {
-        let x = buf[i] as f64;
-        let y;
-        match prametic_curve.funtion_type {
+    let required = match prametic_curve.funtion_type {
+        0 => 1,
+        1 => 3,
+        2 => 4,
+        3 => 5,
+        4 => 7,
+        _ => 0,
+    };
+    if entry != 0 && prametic_curve.vals.len() < required {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Parametric curve coefficients shortage",
+        ));
+    }
+    // At most seven coefficients are used; ignore surplus data without allocating.
+    let mut p = [0.0; 7];
+    for (index, val) in prametic_curve.vals.iter().take(required).enumerate() {
+        p[index] = val.as_f64();
+    }
+    if entry != 0 && matches!(prametic_curve.funtion_type, 1 | 2) && p[1] == 0.0 {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Parametric curve has zero divisor a",
+        ));
+    }
+    let mut data = Vec::new();
+    data.try_reserve_exact(entry).map_err(Error::other)?;
+
+    for &byte in &buf[..entry] {
+        let x = byte as f64;
+        let y = match prametic_curve.funtion_type {
             0x000 => {
                 let gamma = p[0];
-                y = x.powf(gamma); 
-            },
+                x.powf(gamma)
+            }
             0x001 => {
                 let gamma = p[0];
                 let a = p[1];
                 let b = p[2];
-                y = if x >= - b / a {
+                if x >= -b / a {
                     (a * x + b).powf(gamma)
                 } else {
                     0.0
-                };
-            },
+                }
+            }
             0x002 => {
                 let gamma = p[0];
                 let a = p[1];
                 let b = p[2];
                 let c = p[3];
-                y = if x >= - b / a {
+                if x >= -b / a {
                     (a * x + b).powf(gamma) + c
                 } else {
                     c
-                };
-            },
+                }
+            }
             0x003 => {
                 let gamma = p[0];
                 let a = p[1];
                 let b = p[2];
                 let c = p[3];
                 let d = p[4];
-                y = if x >= d {
+                if x >= d {
                     (a * x + b).powf(gamma)
                 } else {
                     c * x
-                };
-            },
+                }
+            }
             0x004 => {
                 let gamma = p[0];
                 let a = p[1];
@@ -60,13 +103,19 @@ pub fn transration_prametic_curve(buf:&[u8] ,entry:usize,prametic_curve:Parametr
                 let d = p[4];
                 let e = p[5];
                 let f = p[6];
-                y = if x >= d {
+                if x >= d {
                     (a * x + b).powf(gamma) + e
                 } else {
                     c * x + f
-                };
-            },
-            _ => { y = x; }
+                }
+            }
+            _ => x,
+        };
+        if !y.is_finite() {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Parametric curve result is not finite",
+            ));
         }
         data.push(((y + 0.5) as i16).clamp(0, 255) as u8);
     }
@@ -82,12 +131,28 @@ mod tests {
         S15Fixed16Number::new(val)
     }
 
+    #[test]
+    fn output_reservation_failure_returns_error() {
+        let curve = ParametricCurve {
+            funtion_type: 0,
+            vals: vec![s15(1.0)],
+        };
+        let result = crate::allocation_probe::fail_once(3, || {
+            transration_prametic_curve(&[0, 128, 255], 3, curve)
+        });
+        assert!(result.is_err());
+        assert_eq!(crate::allocation_probe::failure_hits(), 1);
+    }
+
     // --- type 0x000: y = x^gamma ---
 
     #[test]
     fn test_type0_gamma1_identity() {
         // gamma=1.0 → y = x
-        let curve = ParametricCurve { funtion_type: 0x000, vals: vec![s15(1.0)] };
+        let curve = ParametricCurve {
+            funtion_type: 0x000,
+            vals: vec![s15(1.0)],
+        };
         let buf = vec![0u8, 100u8, 255u8];
         let result = transration_prametic_curve(&buf, 3, curve).unwrap();
         assert_eq!(result, vec![0, 100, 255]);
@@ -96,7 +161,10 @@ mod tests {
     #[test]
     fn test_type0_gamma2() {
         // gamma=2.0, x=10 → y=100
-        let curve = ParametricCurve { funtion_type: 0x000, vals: vec![s15(2.0)] };
+        let curve = ParametricCurve {
+            funtion_type: 0x000,
+            vals: vec![s15(2.0)],
+        };
         let result = transration_prametic_curve(&[10u8], 1, curve).unwrap();
         assert_eq!(result[0], 100);
     }
@@ -104,7 +172,10 @@ mod tests {
     #[test]
     fn test_type0_clamp_overflow() {
         // gamma=2.0, x=200 → y=40000 → clamp to 255
-        let curve = ParametricCurve { funtion_type: 0x000, vals: vec![s15(2.0)] };
+        let curve = ParametricCurve {
+            funtion_type: 0x000,
+            vals: vec![s15(2.0)],
+        };
         let result = transration_prametic_curve(&[200u8], 1, curve).unwrap();
         assert_eq!(result[0], 255);
     }
@@ -192,7 +263,15 @@ mod tests {
         // x=100 >= 50 → y = (100)^1 + 5 = 105
         let curve = ParametricCurve {
             funtion_type: 0x004,
-            vals: vec![s15(1.0), s15(1.0), s15(0.0), s15(1.0), s15(50.0), s15(5.0), s15(0.0)],
+            vals: vec![
+                s15(1.0),
+                s15(1.0),
+                s15(0.0),
+                s15(1.0),
+                s15(50.0),
+                s15(5.0),
+                s15(0.0),
+            ],
         };
         let result = transration_prametic_curve(&[100u8], 1, curve).unwrap();
         assert_eq!(result[0], 105);
@@ -204,7 +283,15 @@ mod tests {
         // x=20 < 50 → y = 1*20 + 10 = 30
         let curve = ParametricCurve {
             funtion_type: 0x004,
-            vals: vec![s15(1.0), s15(1.0), s15(0.0), s15(1.0), s15(50.0), s15(0.0), s15(10.0)],
+            vals: vec![
+                s15(1.0),
+                s15(1.0),
+                s15(0.0),
+                s15(1.0),
+                s15(50.0),
+                s15(0.0),
+                s15(10.0),
+            ],
         };
         let result = transration_prametic_curve(&[20u8], 1, curve).unwrap();
         assert_eq!(result[0], 30);
@@ -214,7 +301,10 @@ mod tests {
 
     #[test]
     fn test_unknown_type_passthrough() {
-        let curve = ParametricCurve { funtion_type: 0xFF, vals: vec![] };
+        let curve = ParametricCurve {
+            funtion_type: 0xFF,
+            vals: vec![],
+        };
         let buf = vec![42u8, 128u8];
         let result = transration_prametic_curve(&buf, 2, curve).unwrap();
         assert_eq!(result, vec![42, 128]);
@@ -224,10 +314,12 @@ mod tests {
 
     #[test]
     fn test_data_shortage_error() {
-        let curve = ParametricCurve { funtion_type: 0x000, vals: vec![s15(1.0)] };
+        let curve = ParametricCurve {
+            funtion_type: 0x000,
+            vals: vec![s15(1.0)],
+        };
         let buf = vec![1u8, 2u8];
         let result = transration_prametic_curve(&buf, 5, curve);
         assert!(result.is_err());
     }
 }
-

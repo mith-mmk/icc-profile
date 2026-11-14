@@ -55,7 +55,7 @@ pub(super) struct EncodedRange {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct CurveSetShape<'a> {
-    pub(super) plans: [CurvePlan<'a>; 3],
+    pub(super) plans: [CurvePlan<'a>; 4],
     pub(super) count: usize,
 }
 
@@ -317,7 +317,7 @@ fn checked_mft_shape(data: &[u8], pcs: Pcs) -> Result<LutShape<'_>, TransformErr
     for index in 0..9 {
         matrix[index / 3][index % 3] = be_i32(data, 12 + index * 4)? as f32 / 65536.0;
     }
-    if pcs == Pcs::Lab
+    if (pcs == Pcs::Lab || input_channels == 4)
         && matrix.iter().enumerate().any(|(row, values)| {
             values
                 .iter()
@@ -326,7 +326,7 @@ fn checked_mft_shape(data: &[u8], pcs: Pcs) -> Result<LutShape<'_>, TransformErr
         })
     {
         return Err(TransformError::InvalidProfile(
-            "LUT matrix must be identity for Lab PCS",
+            "LUT matrix must be identity for Lab PCS or CMYK input",
         ));
     }
     Ok(LutShape {
@@ -436,7 +436,7 @@ fn checked_mab_shape(
             data,
             co,
             input_channels,
-            output_channels.min(3),
+            output_channels,
             limits,
         )?)
     };
@@ -476,7 +476,7 @@ fn checked_clut_shape(
     if grid_len == 0 {
         return Err(TransformError::InvalidProfile("CLUT has no grid"));
     }
-    if channels == 0 || channels > 3 || dimensions == 0 || dimensions > grid_len {
+    if channels == 0 || channels > 4 || dimensions == 0 || dimensions > grid_len {
         return Err(TransformError::UnsupportedProfileFeature(
             "CLUT channel count",
         ));
@@ -570,16 +570,16 @@ pub(super) fn plan_curve_set_shape<'a>(
 ) -> Result<CurveSetShape<'a>, TransformError> {
     if offset == 0 {
         return Ok(CurveSetShape {
-            plans: [CurvePlan::default(); 3],
+            plans: [CurvePlan::default(); 4],
             count: 0,
         });
     }
-    if count > 3 {
+    if count > 4 {
         return Err(TransformError::UnsupportedProfileFeature(
-            "only Gray/RGB LUTs are supported",
+            "curve sets support at most four channels",
         ));
     }
-    let mut plans = [CurvePlan::default(); 3];
+    let mut plans = [CurvePlan::default(); 4];
     let mut at = offset;
     for plan in plans.iter_mut().take(count) {
         let curve_data = data

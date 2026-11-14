@@ -6,7 +6,7 @@ Thank you for your interest in contributing! This document provides guidance on 
 
 ### Prerequisites
 
-- Rust 1.56+ (stable)
+- Rust 1.91+ (MSRV 1.91.0; stable is also tested)
 - Cargo
 - git
 
@@ -26,11 +26,12 @@ cargo build
 cargo test --lib
 ```
 
-Runs 14 unit tests for color space math without external ICC profiles.
+Runs library unit tests without external ICC profiles. For the normal release
+suite, run `cargo test --all-targets` and `cargo test --doc`; see [CI](docs/ci.md).
 
 #### Full Integration Tests
 
-The project includes 96 integration tests using real ICC profiles. To enable them:
+External profile tests require separately obtained fixtures. To enable them:
 
 1. **Create test sample directory**:
 
@@ -57,11 +58,14 @@ mkdir -p _test_samples
 
 **Never use profiles from unknown or suspicious sources**.
 
-3. **Run full test suite**:
+3. **Run a selected external test explicitly** (missing files are errors):
 
 ```bash
-cargo test
+cargo test --test icc_profile_load srgb_v4 -- --ignored
 ```
+
+Do not count ignored tests or legacy tests that return early without fixtures as
+real-profile coverage. See [CI](docs/ci.md) for opt-in prerequisites.
 
 ### Recommended Profile Sources
 
@@ -127,13 +131,13 @@ RUST_BACKTRACE=1 cargo test
 ### Formatting
 
 ```bash
-cargo fmt
+cargo fmt --all
 ```
 
 ### Linting
 
 ```bash
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 ```
 
 ## Testing Guidelines
@@ -199,7 +203,7 @@ assert!(de2000 < 2.0, "Color difference acceptable");
 
 - [ ] Tests pass: `cargo test`
 - [ ] Code formatted: `cargo fmt`
-- [ ] No clippy warnings: `cargo clippy -- -D warnings`
+- [ ] No clippy warnings: `cargo clippy --all-targets -- -D warnings`
 - [ ] Doc tests pass: `cargo test --doc`
 - [ ] New tests added for features
 - [ ] Changes documented in code

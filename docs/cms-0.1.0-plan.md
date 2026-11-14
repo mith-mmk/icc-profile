@@ -149,3 +149,37 @@ used only as black-box oracles for comparison and benchmarking; their source
 must not be viewed, copied, or ported. All unsupported combinations remain
 explicit errors until their specification, implementation, and tests are
 reviewed and accepted.
+
+## Borrowed-output transaction contract
+
+`Transform` and `TransformWorker` expose `transform_f32_atomic`,
+`transform_u8_atomic`, and `transform_u16_atomic`. Every returned `Err` leaves
+all caller output samples bit-for-bit unchanged (including NaN payloads and
+signed zero). These names describe output transactions, not thread atomics;
+panics are not covered. Input/output lengths, clipping, quantization and color
+semantics are the same as the corresponding existing methods.
+
+- Existing `transform_f32` remains a one-pass API. Length errors do not write,
+  but a later input or evaluation error may leave earlier pixels updated.
+- `transform_f32_atomic` first evaluates all pixels into fixed chunk scratch,
+  then publishes in a second evaluation pass. Scratch is 192 floats (768 bytes),
+  independent of image size, in addition to the transform evaluator's normal
+  stack usage. Successful calls perform twice the color evaluation, not
+  necessarily twice the elapsed time. No image-sized temporary is allocated.
+- Existing `transform_u8` and `transform_u16` already provide unchanged output
+  on error with two passes and two 192-float chunk buffers (1536 bytes).
+  Their `_atomic` methods are aliases, with no added pass or allocation.
+- `CompiledProfile::transform_f32_atomic` evaluates one pixel through its
+  physical D50 XYZ stage boundary into four stack floats (16 bytes), then
+  copies on success. It needs only one evaluation. Integer stage methods are
+  intentionally absent: quantized normalized samples must not be confused
+  with physical PCS values.
+- Owned `transform_f32_vec` results already expose no partial output on error,
+  so no duplicate `_atomic_vec` method is added. ExecutionLimits continue to
+  govern owned output allocation; borrowed-output methods need no image-sized
+  allocation. Error diagnostics may allocate.
+
+The two-pass guarantee relies on an immutable, deterministic transform and
+identical inputs in each pass. Future stateful evaluators must preserve this
+invariant or use a different transactional implementation. Existing APIs are
+retained without deprecation or changed success/error semantics.

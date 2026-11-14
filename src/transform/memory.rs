@@ -75,7 +75,14 @@ impl TransformMemory {
             .compiled_bytes
             .checked_add(other.compiled_bytes)
             .ok_or(TransformError::ResourceLimit("transform memory accounting"))?;
-        Self::from_parts(profile_bytes, compiled_bytes)
+        let mut result = Self::from_parts(profile_bytes, compiled_bytes)?;
+        result.build_peak_bytes = self
+            .build_peak_bytes
+            .checked_add(other.build_peak_bytes)
+            .ok_or(TransformError::ResourceLimit(
+                "transform build peak accounting",
+            ))?;
+        Ok(result)
     }
 }
 
@@ -96,7 +103,11 @@ impl CompiledProfile {
 impl Transform {
     /// Return the checked resident size of the source profiles and immutable
     /// CMS stages held by this transform. Shared profile/matrix/LUT `Arc`
-    /// allocations are counted once.
+    /// allocations are counted once. Build peak additionally includes temporary
+    /// CMYK BPC auxiliary tables and the bounded output-estimator ramp, which
+    /// are discarded before publication. For BPC routes the compile-byte limit
+    /// must cover build_peak_bytes minus
+    /// profile_bytes, not just the retained compiled_bytes.
     pub fn memory_usage(&self) -> Result<TransformMemory, TransformError> {
         let mut total = 0usize;
         let mut matrices: [*const MatrixProfile; 2] = [std::ptr::null(); 2];
@@ -131,6 +142,23 @@ impl Transform {
                 .checked_add(lut_memory(lut)?)
                 .ok_or(TransformError::ResourceLimit("transform memory accounting"))?;
         }
+        if self.bpc.is_some() {
+            total = total
+                .checked_add(size_of::<super::bpc::BpcStage>())
+                .ok_or(TransformError::ResourceLimit("BPC memory accounting"))?;
+        }
+        if self.cmyk_bpc.is_some() {
+            total = total
+                .checked_add(size_of::<super::bpc::CmykBpcStage>())
+                .ok_or(TransformError::ResourceLimit("CMYK BPC memory accounting"))?;
+        }
+        if self.cmyk_output_bpc.is_some() {
+            total = total
+                .checked_add(size_of::<super::bpc::CmykOutputBpcStage>())
+                .ok_or(TransformError::ResourceLimit(
+                    "output BPC memory accounting",
+                ))?;
+        }
         let profile_bytes = if Arc::ptr_eq(&self.input_profile.0, &self.output_profile.0) {
             profile_memory(&self.input_profile.0)?
         } else {
@@ -138,7 +166,14 @@ impl Transform {
                 .checked_add(profile_memory(&self.output_profile.0)?)
                 .ok_or(TransformError::ResourceLimit("transform memory accounting"))?
         };
-        TransformMemory::from_parts(profile_bytes, total)
+        let mut result = TransformMemory::from_parts(profile_bytes, total)?;
+        result.build_peak_bytes = result
+            .build_peak_bytes
+            .checked_add(self.bpc_auxiliary_bytes)
+            .ok_or(TransformError::ResourceLimit(
+                "BPC auxiliary build peak accounting",
+            ))?;
+        Ok(result)
     }
 
     /// Account for a build in which the two source profiles are retained
@@ -213,7 +248,7 @@ fn matrix_memory(matrix: &MatrixProfile) -> Result<usize, TransformError> {
     Ok(total)
 }
 
-fn lut_memory(lut: &LutTransform) -> Result<usize, TransformError> {
+pub(super) fn lut_memory(lut: &LutTransform) -> Result<usize, TransformError> {
     let mut total = size_of::<LutTransform>();
     match &lut.kind {
         LutKind::Mft {

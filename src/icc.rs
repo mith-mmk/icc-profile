@@ -39,9 +39,11 @@
 //! that variant alone does not prove profile corruption. Messages are diagnostics,
 //! not a stable machine-readable classification. BPC support is route-specific,
 //! not universal; consult the README route table before enabling it.
+//! [`Transform::bpc_info`] and [`TransformWorker::bpc_info`] identify the active
+//! route without inspecting separate accessors.
 
 pub use crate::transform::{
-    AlgorithmProfile, BpcBlackEstimate, BpcDiagnostics, BpcMethod, ClutInterpolation3D,
+    AlgorithmProfile, BpcBlackEstimate, BpcDiagnostics, BpcInfo, BpcMethod, ClutInterpolation3D,
     ClutInterpolation4D, CmykBpcDiagnostics, CmykOutputBpcDiagnostics, CmykOutputBpcMethod,
     ColorSpace, CompiledProfile, ExecutionLimits, ExecutionLimitsBuilder, ParseLimits, Pcs,
     Profile, RenderingIntent, RouteInfo, RouteModel, Transform, TransformDirection, TransformError,

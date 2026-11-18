@@ -149,7 +149,13 @@ CMYK BPC does not accept selected-tag fallback; invalid/degenerate estimators
 fail explicitly. See [matrix BPC](docs/relative-matrix-bpc.md),
 [CMYK input BPC](docs/cmyk-input-bpc.md) and
 [CMYK output BPC](docs/cmyk-output-bpc.md). This is a bounded implementation,
-not a claim of full ISO 18619 conformance.
+not a claim of full ISO 18619 conformance. Use `Transform::bpc_info()` (or
+`TransformWorker::bpc_info()`) to distinguish matrix, CMYK input, and CMYK output
+BPC. `None` means BPC is disabled; unsupported requested routes still fail
+during construction. The existing route-specific accessors keep their meanings.
+CMYK diagnostics follow the selected 3D interpolation; existing clones and
+workers retain their own settings. CMYK output's `initial_lstar()` is already
+capped at L* = 50, unlike the matrix estimate's uncapped `raw_lstar()`.
 
 ## Testing
 

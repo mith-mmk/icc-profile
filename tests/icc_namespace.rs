@@ -1,10 +1,11 @@
-use icc_profile::{icc, Profile, TransformError, TransformOptions};
+use icc_profile::{icc, Profile, Transform, TransformError, TransformOptions};
 
 #[test]
 fn checked_namespace_preserves_type_identity_and_error_shape() {
     let _: fn(&[u8]) -> Result<Profile, TransformError> = icc::Profile::parse;
     let options: TransformOptions = icc::TransformOptions::default();
     assert!(!options.black_point_compensation);
+    let _: fn(&Transform) -> Option<icc::BpcInfo> = Transform::bpc_info;
     // Deliberately exhaustive: adding non_exhaustive or a new variant to the
     // existing error would break this downstream compatibility contract.
     let classify = |error: icc::TransformError| match error {

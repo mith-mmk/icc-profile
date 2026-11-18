@@ -2,6 +2,21 @@
 use super::error::TransformError;
 use super::profile::MatrixProfile;
 
+/// Diagnostics for the black-point compensation actually used by a transform.
+///
+/// Only admitted routes produce diagnostics. The payloads have route-specific
+/// meanings; in particular, CMYK output's initial L* already includes its cap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum BpcInfo {
+    /// RGB matrix/TRC to RGB matrix/TRC.
+    Matrix(BpcDiagnostics),
+    /// CMYK input to an RGB matrix/TRC destination.
+    CmykInput(CmykBpcDiagnostics),
+    /// RGB matrix/TRC input to a CMYK destination.
+    CmykOutput(CmykOutputBpcDiagnostics),
+}
+
 /// Black estimation method used by the bounded matrix BPC implementation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -345,6 +360,9 @@ impl CmykOutputBpcDiagnostics {
     pub fn initial_device_black(self) -> [f32; 4] {
         self.initial_device_black
     }
+    /// Initial destination black estimate after the L* = 50 cap.
+    ///
+    /// This is not the uncapped value from [`BpcBlackEstimate::raw_lstar`].
     pub fn initial_lstar(self) -> f64 {
         self.initial_lstar
     }

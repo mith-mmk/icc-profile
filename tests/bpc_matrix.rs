@@ -159,9 +159,12 @@ fn matrix_bpc_strict_workers_algorithms_and_atomic_boundaries() {
     let t = make(&src, &dst, false);
     let clone = t.clone();
     let mut old_worker = t.worker();
+    assert_eq!(old_worker.bpc_info(), clone.bpc_info());
     let tri = t.with_algorithm_profile(
         AlgorithmProfile::default().with_clut_3d(ClutInterpolation3D::Trilinear),
     );
+    assert_eq!(tri.bpc_info(), clone.bpc_info());
+    assert_eq!(tri.worker().bpc_info(), old_worker.bpc_info());
     for n in [0, 1, 47, 48, 49, 63, 64, 65, 95, 96, 97, 129] {
         let input: Vec<_> = (0..n * 3).map(|i| [0.2, 0.4, 0.7][i % 3]).collect();
         let mut output = vec![0.0; n * 3];
@@ -334,6 +337,7 @@ fn matrix_bpc_budget_and_selected_forward_route_fail_closed() {
 }
 #[test]
 fn matrix_bpc_diagnostics_ties_caps_and_metadata_are_explicit() {
+    use icc_profile::icc::BpcInfo;
     use icc_profile::BpcMethod;
     for (src, dst, endpoint) in [
         (vec![1000, 65535], vec![6000, 65535], [0.0; 3]),
@@ -343,6 +347,10 @@ fn matrix_bpc_diagnostics_ties_caps_and_metadata_are_explicit() {
     ] {
         let t = make(&src, &dst, true);
         let info = t.bpc_diagnostics().unwrap();
+        assert_eq!(t.bpc_info(), Some(BpcInfo::Matrix(info)));
+        assert_eq!(t.worker().bpc_info(), t.bpc_info());
+        assert!(t.cmyk_input_bpc_diagnostics().is_none());
+        assert!(t.cmyk_output_bpc_diagnostics().is_none());
         assert_eq!(info.method(), BpcMethod::MatrixEndpointsLstar50);
         assert_eq!(info.source().endpoint(), endpoint);
         for (estimate, values) in [(info.source(), &src), (info.destination(), &dst)] {

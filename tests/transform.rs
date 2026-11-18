@@ -413,6 +413,8 @@ fn gray_transform_has_one_channel_and_rgb_to_gray_is_safe() {
     let rgb = Profile::new(&synthetic_rgb_profile()).unwrap();
     let gray = Profile::new(&synthetic_gray_profile()).unwrap();
     let same = Transform::new(&gray, &gray, TransformOptions::default()).unwrap();
+    assert!(same.bpc_info().is_none());
+    assert!(same.worker().bpc_info().is_none());
     let mut gray_out = [0.0];
     same.transform_f32(&[0.5], &mut gray_out).unwrap();
     assert!((gray_out[0] - 0.5).abs() < 0.01);

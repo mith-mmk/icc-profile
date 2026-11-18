@@ -322,10 +322,21 @@ fn interpolation_estimates_are_immutable_and_auxiliary_entries_are_admitted() {
     let dst = Profile::parse(&bytes).unwrap();
     let t = Transform::new(&src, &dst, options(true)).unwrap();
     let original = t.cmyk_output_bpc_diagnostics().unwrap();
+    let old_worker = t.worker();
+    assert_eq!(
+        t.bpc_info(),
+        Some(icc_profile::BpcInfo::CmykOutput(original))
+    );
     let tri = t.clone().with_algorithm_profile(
         AlgorithmProfile::default().with_clut_3d(ClutInterpolation3D::Trilinear),
     );
     let switched = tri.cmyk_output_bpc_diagnostics().unwrap();
+    assert_eq!(
+        tri.bpc_info(),
+        Some(icc_profile::BpcInfo::CmykOutput(switched))
+    );
+    assert_eq!(tri.worker().bpc_info(), tri.bpc_info());
+    assert_eq!(old_worker.bpc_info(), t.bpc_info());
     assert_ne!(
         original.initial_device_black()[3],
         switched.initial_device_black()[3]

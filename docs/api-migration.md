@@ -101,6 +101,25 @@ reclassify old errors or stabilize diagnostic text as an error taxonomy. A valid
 profile can also yield `MalformedProfile` when a device sample is outside its
 allowed domain with `clamp=false`; the variant alone does not prove corruption.
 
+For borrowed output, `Transform::required_output_len(input_len)` computes the
+exact number of output **samples** without allocating. It rejects incomplete
+input pixels or multiplication overflow, but does not enforce an owned Vec
+allocation budget. Input and output channels can differ.
+
+Opt in to `transform_f32_detailed` on `Transform`, `TransformWorker`, or
+`CompiledProfile` to distinguish input/output size errors, non-finite input and
+out-of-range caller device samples from route evaluation and resource failures.
+The new error enum is non-exhaustive. It retains the original error as its source
+for other failures; in particular, an error on route-generated values does not
+by itself identify invalid caller input or a corrupt profile. Sample positions
+are zero-based. Detailed execution is still one pass, can leave partial output
+on a late error, and does not change clipping or PCS semantics. Atomic, integer
+and Vec callers keep their current contracts.
+
+No variants or fields were added to `TransformError`, `CmykOutputBpcMethod`,
+`TransformOptions` or `ParseLimits`. Options still accept struct literals.
+Intent and BPC remain separate from interpolation in `AlgorithmProfile`.
+
 `AlgorithmProfile` chooses built-in methods in the same checked ICC engine.
 It is not a plugin/callback API. ICC tag fallback, reported by `RouteInfo`, is
 separate from cross-layer fallback: no ICC error invokes `simple` implicitly.

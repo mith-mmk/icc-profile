@@ -378,6 +378,17 @@ fn strict_derived_pcs_failure_is_atomic_and_clamping_succeeds() {
     let mut output = vec![0.731; 4 * 137];
     assert!(strict.transform_f32_atomic(&input, &mut output).is_err());
     assert!(output.iter().all(|v| *v == 0.731));
+    let detailed = strict
+        .transform_f32_detailed(&input, &mut output)
+        .unwrap_err();
+    assert!(matches!(
+        &detailed,
+        icc_profile::TransformF32Error::Transform(_)
+    ));
+    assert!(std::error::Error::source(&detailed)
+        .and_then(|error| error.downcast_ref::<icc_profile::TransformError>())
+        .is_some());
+    output.fill(0.731);
     let mut worker = strict.worker();
     for _ in 0..2 {
         assert!(worker.transform_f32_atomic(&input, &mut output).is_err());
@@ -392,4 +403,20 @@ fn strict_derived_pcs_failure_is_atomic_and_clamping_succeeds() {
     assert!(output
         .iter()
         .all(|v| v.is_finite() && (0.0..=1.0).contains(v)));
+}
+
+#[test]
+fn owned_example_and_checked_lengths_cover_both_cmyk_directions() {
+    let rgb = Profile::parse(&destination()).unwrap();
+    let cmyk = Profile::parse(&printer()).unwrap();
+    let options = TransformOptions::default();
+    for (source, destination, samples, output_samples) in [(&rgb, &cmyk, 6, 8), (&cmyk, &rgb, 8, 6)]
+    {
+        let t = Transform::new(source, destination, options).unwrap();
+        assert_eq!(t.required_output_len(samples).unwrap(), output_samples);
+        assert_eq!(
+            t.transform_f32_vec(&vec![0.5; samples]).unwrap().len(),
+            output_samples
+        );
+    }
 }

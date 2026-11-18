@@ -37,7 +37,10 @@
 //! use `InvalidProfile` and other applicable variants. Even with a valid profile,
 //! an out-of-range device sample with `clamp=false` can yield `MalformedProfile`;
 //! that variant alone does not prove profile corruption. Messages are diagnostics,
-//! not a stable machine-readable classification. BPC support is route-specific,
+//! not a stable machine-readable classification. Opt into
+//! [`Transform::transform_f32_detailed`] or [`CompiledProfile::transform_f32_detailed`]
+//! for typed caller-input diagnostics; use [`Transform::required_output_len`]
+//! to size borrowed output in samples without allocating. BPC support is route-specific,
 //! not universal; consult the README route table before enabling it.
 
 pub use crate::transform::{
@@ -45,5 +48,6 @@ pub use crate::transform::{
     ClutInterpolation4D, CmykBpcDiagnostics, CmykOutputBpcDiagnostics, CmykOutputBpcMethod,
     ColorSpace, CompiledProfile, ExecutionLimits, ExecutionLimitsBuilder, ParseLimits, Pcs,
     Profile, RenderingIntent, RouteInfo, RouteModel, Transform, TransformDirection, TransformError,
-    TransformLimits, TransformLimitsBuilder, TransformMemory, TransformOptions, TransformWorker,
+    TransformF32Error, TransformLimits, TransformLimitsBuilder, TransformMemory, TransformOptions,
+    TransformWorker,
 };

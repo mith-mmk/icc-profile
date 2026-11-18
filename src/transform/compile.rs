@@ -3,7 +3,7 @@ use super::bpc::{BpcDiagnostics, BpcStage, CmykBpcDiagnostics, CmykBpcStage};
 use super::bpc::{CmykOutputBpcDiagnostics, CmykOutputBpcStage, OUTPUT_RAMP_BYTES};
 use super::compile_budget::CompileBudget;
 use super::curve::inverse_curve_checked;
-use super::error::TransformError;
+use super::error::{TransformError, TransformF32Error};
 use super::execution::{checked_output_allocation, checked_output_len, try_new_f32_output};
 use super::limits::{ExecutionLimits, TransformLimits};
 use super::lut::{LutTransform, PcsEncoding};
@@ -157,28 +157,35 @@ impl CompiledProfile {
     /// Evaluation errors may partially update output; use `transform_f32_atomic`
     /// when unchanged output on error is required.
     pub fn transform_f32(&self, input: &[f32], output: &mut [f32]) -> Result<(), TransformError> {
+        self.transform_f32_detailed(input, output)
+            .map_err(TransformF32Error::into_legacy)
+    }
+
+    /// Evaluate one pixel like [`Self::transform_f32`] with detailed caller
+    /// input diagnostics. PCS input is physical D50 XYZ, not a 0..=1 device
+    /// sample. This is the same non-transactional execution path.
+    pub fn transform_f32_detailed(
+        &self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), TransformF32Error> {
         if input.len() != self.0.input_channels {
-            return Err(TransformError::InvalidBufferLength {
+            return Err(TransformF32Error::InputLength {
                 expected: self.0.input_channels,
                 actual: input.len(),
             });
         }
         if output.len() != self.0.output_channels {
-            return Err(TransformError::InvalidBufferLength {
+            return Err(TransformF32Error::OutputLength {
                 expected: self.0.output_channels,
                 actual: output.len(),
             });
         }
-        if input.iter().any(|value| !value.is_finite()) {
-            return Err(TransformError::NonFiniteInput);
-        }
-        if self.0.direction == TransformDirection::DeviceToPcs
-            && input.iter().any(|value| !(0.0..=1.0).contains(value))
-        {
-            return Err(TransformError::MalformedProfile(
-                "device sample is outside the normalized domain".into(),
-            ));
-        }
+        validate_f32_samples(
+            input,
+            self.0.direction == TransformDirection::DeviceToPcs,
+            0,
+        )?;
         match self.0.direction {
             TransformDirection::DeviceToPcs => {
                 if let Some(lut) = &self.0.lut {
@@ -214,7 +221,8 @@ impl CompiledProfile {
         if output.iter().any(|value| !value.is_finite()) {
             return Err(TransformError::MalformedProfile(
                 "compiled stage produced a non-finite value".into(),
-            ));
+            )
+            .into());
         }
         Ok(())
     }
@@ -805,15 +813,40 @@ impl Transform {
         )
     }
 
+    /// Return the exact output sample count for `input_len` input samples.
+    ///
+    /// This is not a byte count or an allocation. A partial input pixel
+    /// returns a length error; arithmetic overflow returns a resource error.
+    /// Empty input needs zero output samples. The owned Vec budget does not
+    /// apply here; it is checked separately when allocating that Vec.
+    pub fn required_output_len(&self, input_len: usize) -> Result<usize, TransformError> {
+        checked_output_len(input_len, self.input_channels(), self.output_channels())
+    }
+
     pub(super) fn validate_buffer_lengths(
         &self,
         input_len: usize,
         output_len: usize,
     ) -> Result<(), TransformError> {
-        let expected =
-            checked_output_len(input_len, self.input_channels(), self.output_channels())?;
+        self.validate_buffer_lengths_detailed(input_len, output_len)
+            .map_err(TransformF32Error::into_legacy)
+    }
+
+    fn validate_buffer_lengths_detailed(
+        &self,
+        input_len: usize,
+        output_len: usize,
+    ) -> Result<(), TransformF32Error> {
+        let expected = self
+            .required_output_len(input_len)
+            .map_err(|error| match error {
+                TransformError::InvalidBufferLength { expected, actual } => {
+                    TransformF32Error::InputLength { expected, actual }
+                }
+                error => error.into(),
+            })?;
         if output_len != expected {
-            return Err(TransformError::InvalidBufferLength {
+            return Err(TransformF32Error::OutputLength {
                 expected,
                 actual: output_len,
             });
@@ -834,24 +867,32 @@ impl Transform {
     /// sample or evaluation error may leave a partially updated output.
     /// Use [`Self::transform_f32_atomic`] for unchanged output on every error.
     pub fn transform_f32(&self, input: &[f32], output: &mut [f32]) -> Result<(), TransformError> {
-        self.validate_buffer_lengths(input.len(), output.len())?;
+        self.transform_f32_detailed(input, output)
+            .map_err(TransformF32Error::into_legacy)
+    }
+
+    /// Convert with the same one-pass execution as [`Self::transform_f32`],
+    /// distinguishing caller buffer and sample errors without parsing strings.
+    ///
+    /// Input length is validated before output length, then pixels are processed
+    /// in order. A late error can leave earlier output pixels written. The
+    /// existing atomic and integer methods retain their original error API.
+    pub fn transform_f32_detailed(
+        &self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), TransformF32Error> {
+        self.validate_buffer_lengths_detailed(input.len(), output.len())?;
         let ic = self.input_channels();
         let oc = self.output_channels();
-        for (src, dst) in input.chunks_exact(ic).zip(output.chunks_exact_mut(oc)) {
-            if src.iter().any(|x| !x.is_finite()) {
-                return Err(TransformError::NonFiniteInput);
-            }
+        for (pixel, (src, dst)) in input
+            .chunks_exact(ic)
+            .zip(output.chunks_exact_mut(oc))
+            .enumerate()
+        {
+            validate_f32_samples(src, !self.options.clamp, pixel)?;
             let mut normalized = [0.0; 4];
             normalized[..src.len()].copy_from_slice(src);
-            if !self.options.clamp
-                && normalized[..src.len()]
-                    .iter()
-                    .any(|value| !(0.0..=1.0).contains(value))
-            {
-                return Err(TransformError::MalformedProfile(
-                    "device sample is outside the normalized domain".into(),
-                ));
-            }
             if self.options.clamp {
                 for value in &mut normalized[..src.len()] {
                     *value = value.clamp(0.0, 1.0);
@@ -967,7 +1008,8 @@ impl Transform {
             if dst.iter().any(|value| !value.is_finite()) {
                 return Err(TransformError::MalformedProfile(
                     "transform produced a non-finite value".into(),
-                ));
+                )
+                .into());
             }
         }
         Ok(())
@@ -1068,6 +1110,25 @@ impl Transform {
     ) -> Result<(), TransformError> {
         self.transform_u16(input, output)
     }
+}
+
+fn validate_f32_samples(
+    input: &[f32],
+    strict_device: bool,
+    pixel: usize,
+) -> Result<(), TransformF32Error> {
+    // Preserve legacy precedence: a non-finite channel takes priority over
+    // another out-of-range channel in the same pixel.
+    if let Some(channel) = input.iter().position(|value| !value.is_finite()) {
+        return Err(TransformF32Error::NonFiniteInput { pixel, channel });
+    }
+    if !strict_device {
+        return Ok(());
+    }
+    if let Some(channel) = input.iter().position(|value| !(0.0..=1.0).contains(value)) {
+        return Err(TransformF32Error::InputOutOfRange { pixel, channel });
+    }
+    Ok(())
 }
 
 // ICC draft CMYK input black: physical Lab(0,0,0), equivalently XYZ zero,

@@ -657,6 +657,104 @@ fn forward_parametric_unused_power_branch_is_not_validated() {
 mod atomic_contract;
 
 #[test]
+fn detailed_f32_errors_distinguish_input_output_and_keep_legacy_precedence() {
+    use icc_profile::TransformF32Error;
+    let rgb = Profile::parse(&synthetic_rgb_profile()).unwrap();
+    let strict = Transform::new(
+        &rgb,
+        &rgb,
+        TransformOptions {
+            clamp: false,
+            ..TransformOptions::default()
+        },
+    )
+    .unwrap();
+    let mut out = [9.0; 6];
+    assert!(matches!(
+        strict.transform_f32_detailed(&[0.0; 5], &mut out[..5]),
+        Err(TransformF32Error::InputLength {
+            expected: 3,
+            actual: 5
+        })
+    ));
+    assert!(matches!(
+        strict.transform_f32_detailed(&[f32::NAN; 6], &mut out[..5]),
+        Err(TransformF32Error::OutputLength {
+            expected: 6,
+            actual: 5
+        })
+    ));
+    assert_eq!(out, [9.0; 6]);
+    assert!(matches!(
+        strict.transform_f32_detailed(&[0.4, 0.3, 0.2, 2.0, f32::INFINITY, 0.0], &mut out),
+        Err(TransformF32Error::NonFiniteInput {
+            pixel: 1,
+            channel: 1
+        })
+    ));
+    assert_ne!(out[..3], [9.0; 3]);
+    assert_eq!(out[3..], [9.0; 3]);
+    let invalid = [0.4, 0.3, 0.2, 0.1, 1.0001, 0.0];
+    assert!(matches!(
+        strict.worker().transform_f32_detailed(&invalid, &mut out),
+        Err(TransformF32Error::InputOutOfRange {
+            pixel: 1,
+            channel: 1
+        })
+    ));
+    assert!(matches!(
+        strict.transform_f32(&invalid, &mut out),
+        Err(TransformError::MalformedProfile(text))
+            if text == "device sample is outside the normalized domain"
+    ));
+    out.fill(9.0);
+    assert!(strict.transform_f32_atomic(&invalid, &mut out).is_err());
+    assert_eq!(out, [9.0; 6]);
+    let clipping = Transform::new(&rgb, &rgb, TransformOptions::default()).unwrap();
+    clipping.transform_f32_detailed(&invalid, &mut out).unwrap();
+    let mut legacy = [0.0; 6];
+    clipping.transform_f32(&invalid, &mut legacy).unwrap();
+    assert_eq!(out, legacy);
+    assert!(clipping.transform_f32_detailed(&[], &mut []).is_ok());
+}
+
+#[test]
+fn owned_example_and_checked_lengths_cover_rgb_and_gray_channel_changes() {
+    let rgb = Profile::parse(&synthetic_rgb_profile()).unwrap();
+    let gray = Profile::parse(&synthetic_gray_profile()).unwrap();
+    for (source, destination, samples, output_samples) in
+        [(&rgb, &rgb, 6, 6), (&gray, &rgb, 2, 6), (&rgb, &gray, 6, 2)]
+    {
+        let t = Transform::new(source, destination, TransformOptions::default()).unwrap();
+        assert_eq!(t.required_output_len(0).unwrap(), 0);
+        assert_eq!(t.required_output_len(samples).unwrap(), output_samples);
+        assert_eq!(
+            t.transform_f32_vec(&vec![0.5; samples]).unwrap().len(),
+            output_samples
+        );
+    }
+    let to_rgb = Transform::new(&gray, &rgb, TransformOptions::default()).unwrap();
+    assert!(matches!(
+        to_rgb.required_output_len(usize::MAX),
+        Err(TransformError::ResourceLimit("output length"))
+    ));
+    use icc_profile::TransformF32Error;
+    let error = TransformF32Error::from(to_rgb.required_output_len(usize::MAX).unwrap_err());
+    assert!(matches!(
+        std::error::Error::source(&error).and_then(|e| e.downcast_ref::<TransformError>()),
+        Some(TransformError::ResourceLimit("output length"))
+    ));
+    let to_gray = Transform::new(&rgb, &gray, TransformOptions::default()).unwrap();
+    assert!(matches!(
+        to_gray.required_output_len(2),
+        Err(TransformError::InvalidBufferLength {
+            expected: 3,
+            actual: 2
+        })
+    ));
+}
+
+#[test]
 fn atomic_rgb_and_cross_channel_matrix_contracts() {
     let rgb = Profile::parse(&synthetic_rgb_profile()).unwrap();
     let gray = Profile::parse(&synthetic_gray_profile()).unwrap();

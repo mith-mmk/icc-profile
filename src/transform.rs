@@ -31,7 +31,7 @@ mod compile_budget_tests;
 mod execution_tests;
 
 pub use compile::{CompiledProfile, Transform, TransformDirection};
-pub use error::TransformError;
+pub use error::{TransformError, TransformF32Error};
 pub use limits::{
     ExecutionLimits, ExecutionLimitsBuilder, ParseLimits, TransformLimits, TransformLimitsBuilder,
 };

@@ -1,6 +1,6 @@
 use super::bpc::BpcInfo;
 use super::compile::Transform;
-use super::error::TransformError;
+use super::error::{TransformError, TransformF32Error};
 
 const CHUNK_PIXELS: usize = 64;
 const SCRATCH_VALUES: usize = 192;
@@ -28,6 +28,16 @@ impl TransformWorker {
         output: &mut [f32],
     ) -> Result<(), TransformError> {
         self.transform.transform_f32(input, output)
+    }
+
+    /// Execute with the detailed one-pass diagnostics of
+    /// [`Transform::transform_f32_detailed`].
+    pub fn transform_f32_detailed(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+    ) -> Result<(), TransformF32Error> {
+        self.transform.transform_f32_detailed(input, output)
     }
 
     /// See [`Transform::transform_f32_atomic`] for the unchanged-on-error,

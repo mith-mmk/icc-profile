@@ -17,4 +17,20 @@ fn checked_namespace_preserves_type_identity_and_error_shape() {
         TransformError::ResourceLimit(_) => 5,
     };
     assert_eq!(classify(icc::Profile::parse(&[]).unwrap_err()), 0);
+    let _: TransformOptions = icc::TransformOptions {
+        rendering_intent: icc::RenderingIntent::RelativeColorimetric,
+        black_point_compensation: false,
+        clamp: false,
+    };
+    let _: icc::ParseLimits = icc::ParseLimits {
+        max_profile_size: 1024,
+        max_tag_count: 16,
+        max_tag_size: 512,
+        max_curve_entries: 16,
+    };
+    let classify_method = |method| match method {
+        icc::CmykOutputBpcMethod::MidrangeStraight => 0,
+        icc::CmykOutputBpcMethod::QuadraticFit => 1,
+    };
+    assert_eq!(classify_method(icc::CmykOutputBpcMethod::QuadraticFit), 1);
 }

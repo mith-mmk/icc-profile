@@ -1,6 +1,7 @@
 //! Buffer diagnostics for compiled stages, using self-contained v4 LUT profiles.
 use icc_profile::{
-    CompiledProfile, Profile, RenderingIntent, TransformDirection, TransformError, TransformLimits,
+    CompiledProfile, Profile, RenderingIntent, TransformDirection, TransformError,
+    TransformF32Error, TransformLimits,
 };
 
 fn put_u32(bytes: &mut [u8], at: usize, value: u32) {
@@ -148,4 +149,52 @@ fn valid_lengths_evaluate_the_compiled_stage() {
         stage.transform_f32(&input, &mut output).unwrap();
         assert_eq!(output, vec![0.0; stage.output_channels()]);
     }
+}
+
+#[test]
+fn compiled_f32_details_distinguish_shape_device_domain_and_physical_pcs() {
+    let forward = stage(4, TransformDirection::DeviceToPcs);
+    let mut xyz = [9.0; 3];
+    assert!(matches!(
+        forward.transform_f32_detailed(&[0.0; 3], &mut xyz[..2]),
+        Err(TransformF32Error::InputLength {
+            expected: 4,
+            actual: 3
+        })
+    ));
+    assert!(matches!(
+        forward.transform_f32_detailed(&[f32::NAN; 4], &mut xyz[..2]),
+        Err(TransformF32Error::OutputLength {
+            expected: 3,
+            actual: 2
+        })
+    ));
+    assert!(matches!(
+        forward.transform_f32_detailed(&[0.0, 1.25, 0.0, f32::NAN], &mut xyz),
+        Err(TransformF32Error::NonFiniteInput {
+            pixel: 0,
+            channel: 3
+        })
+    ));
+    assert!(matches!(
+        forward.transform_f32_detailed(&[0.0, 1.25, 0.0, 0.0], &mut xyz),
+        Err(TransformF32Error::InputOutOfRange {
+            pixel: 0,
+            channel: 1
+        })
+    ));
+    assert_eq!(xyz, [9.0; 3]);
+    let reverse = stage(4, TransformDirection::PcsToDevice);
+    let mut cmyk = [0.0; 4];
+    // An XYZ coordinate can exceed 1.0 in this LUT's physical PCS encoding.
+    reverse
+        .transform_f32_detailed(&[1.1, 0.4, 0.5], &mut cmyk)
+        .unwrap();
+    assert!(matches!(
+        reverse.transform_f32_detailed(&[f32::NAN, 0.4, 0.5], &mut cmyk),
+        Err(TransformF32Error::NonFiniteInput {
+            pixel: 0,
+            channel: 0
+        })
+    ));
 }

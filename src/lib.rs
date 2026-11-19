@@ -62,7 +62,8 @@ pub use transform::{
     ClutInterpolation4D, CmykBpcDiagnostics, CmykOutputBpcDiagnostics, CmykOutputBpcMethod,
     ColorSpace, CompiledProfile, ExecutionLimits, ExecutionLimitsBuilder, ParseLimits, Pcs,
     Profile, RenderingIntent, RouteInfo, RouteModel, Transform, TransformDirection, TransformError,
-    TransformLimits, TransformLimitsBuilder, TransformMemory, TransformOptions, TransformWorker,
+    TransformF32Error, TransformLimits, TransformLimitsBuilder, TransformMemory, TransformOptions,
+    TransformWorker,
 };
 
 #[cfg(test)]

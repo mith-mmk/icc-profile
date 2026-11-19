@@ -30,10 +30,8 @@ Alpha is not passed to the CMS and must be handled by the caller.
   Migration is recommended, not enforced: no `#[deprecated]` attributes or
   removal are introduced. See [the migration map](docs/api-migration.md).
 
-This checkout declares version `0.1.0`. See the [changelog](CHANGELOG.md) for
-changes since 0.0.8 and the [release checklist](docs/release-0.1.0.md) for
-verification and publication status. A version in this checkout is not proof
-of crates.io publication.
+See the [changelog](CHANGELOG.md) for release changes and
+[crates.io](https://crates.io/crates/icc-profile) for published versions.
 
 ## Interpolation and LittleCMS compatibility
 

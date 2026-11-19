@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.1.0 - Unreleased
+## 0.1.1
+
+### Added
+
+- Unified, route-specific BPC diagnostics on transforms and workers, without
+  changing BPC calculations or existing diagnostic accessors.
+- Opt-in typed errors for borrowed floating-point execution and checked output
+  sample sizing. Existing error types and output semantics are unchanged.
+
+## 0.1.0
 
 ### Added
 

@@ -246,6 +246,10 @@ fn cmyk_bpc_xyz_lab_and_k_match_independent_oracle() {
     let b = a.clone().with_algorithm_profile(
         AlgorithmProfile::default().with_clut_3d(ClutInterpolation3D::Trilinear),
     );
+    let old_worker = a.worker();
+    assert_eq!(old_worker.bpc_info(), a.bpc_info());
+    assert_ne!(old_worker.bpc_info(), b.bpc_info());
+    assert_eq!(b.worker().bpc_info(), b.bpc_info());
     let mut x = [0.0; 3];
     let mut y = x;
     a.transform_f32_atomic(&[0.8; 4], &mut x).unwrap();
@@ -404,6 +408,9 @@ fn cmyk_bpc_diagnostics_preserve_four_channels_and_current_algorithm() {
             let t = build(lab, tri, true);
             assert!(t.bpc_diagnostics().is_none());
             let info = t.cmyk_bpc_diagnostics().unwrap();
+            assert_eq!(t.cmyk_input_bpc_diagnostics(), Some(info));
+            assert_eq!(t.bpc_info(), Some(icc_profile::BpcInfo::CmykInput(info)));
+            assert!(t.cmyk_output_bpc_diagnostics().is_none());
             let device = local_black(lab, tri);
             close(&info.device_black(), &device.map(|v| v as f32));
             let xyz = to_xyz(device, lab);

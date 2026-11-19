@@ -1,3 +1,4 @@
+use super::bpc::BpcInfo;
 use super::compile::Transform;
 use super::error::TransformError;
 
@@ -12,6 +13,11 @@ impl TransformWorker {
     /// Numerical choices inherited when this worker was created.
     pub fn algorithm_profile(&self) -> super::algorithm::AlgorithmProfile {
         self.transform.algorithm_profile()
+    }
+
+    /// Diagnostics for the BPC route inherited when this worker was created.
+    pub fn bpc_info(&self) -> Option<BpcInfo> {
+        self.transform.bpc_info()
     }
 
     /// One-pass execution; a late error may leave output partially updated.

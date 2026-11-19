@@ -1,5 +1,5 @@
 use super::algorithm::AlgorithmProfile;
-use super::bpc::{BpcDiagnostics, BpcStage, CmykBpcDiagnostics, CmykBpcStage};
+use super::bpc::{BpcDiagnostics, BpcInfo, BpcStage, CmykBpcDiagnostics, CmykBpcStage};
 use super::bpc::{CmykOutputBpcDiagnostics, CmykOutputBpcStage, OUTPUT_RAMP_BYTES};
 use super::compile_budget::CompileBudget;
 use super::curve::inverse_curve_checked;
@@ -743,6 +743,17 @@ impl Transform {
         })
     }
 
+    /// Report the active BPC route, or `None` when BPC is disabled.
+    ///
+    /// Unsupported requested BPC routes fail during construction. CMYK
+    /// diagnostics reflect this transform's selected 3D interpolation.
+    pub fn bpc_info(&self) -> Option<BpcInfo> {
+        self.bpc_diagnostics()
+            .map(BpcInfo::Matrix)
+            .or_else(|| self.cmyk_input_bpc_diagnostics().map(BpcInfo::CmykInput))
+            .or_else(|| self.cmyk_output_bpc_diagnostics().map(BpcInfo::CmykOutput))
+    }
+
     /// CMYK-output estimates for the selected interpolation; auxiliary LUTs are not retained.
     pub fn cmyk_output_bpc_diagnostics(&self) -> Option<CmykOutputBpcDiagnostics> {
         self.cmyk_output_bpc
@@ -750,7 +761,7 @@ impl Transform {
             .map(|s| s.diagnostics(self.algorithms.clut_3d()))
     }
     /// Matrix-only BPC estimates. Returns None for disabled BPC or CMYK BPC;
-    /// use cmyk_bpc_diagnostics for full four-channel CMYK estimates.
+    /// use [`Self::bpc_info`] to inspect any active route.
     pub fn bpc_diagnostics(&self) -> Option<BpcDiagnostics> {
         self.bpc.as_ref().map(|stage| stage.diagnostics())
     }
@@ -758,6 +769,11 @@ impl Transform {
     /// CMYK-input BPC diagnostics for the current interpolation algorithm.
     /// Both supported algorithm estimates are immutable and precomputed.
     pub fn cmyk_bpc_diagnostics(&self) -> Option<CmykBpcDiagnostics> {
+        self.cmyk_input_bpc_diagnostics()
+    }
+
+    /// Explicitly named alias for [`Self::cmyk_bpc_diagnostics`].
+    pub fn cmyk_input_bpc_diagnostics(&self) -> Option<CmykBpcDiagnostics> {
         self.cmyk_bpc
             .as_ref()
             .map(|stage| stage.diagnostics(self.algorithms.clut_3d()))

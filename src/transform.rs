@@ -43,6 +43,6 @@ pub use worker::TransformWorker;
 pub use algorithm::{AlgorithmProfile, ClutInterpolation3D, ClutInterpolation4D};
 
 pub use bpc::{
-    BpcBlackEstimate, BpcDiagnostics, BpcMethod, CmykBpcDiagnostics, CmykOutputBpcDiagnostics,
-    CmykOutputBpcMethod,
+    BpcBlackEstimate, BpcDiagnostics, BpcInfo, BpcMethod, CmykBpcDiagnostics,
+    CmykOutputBpcDiagnostics, CmykOutputBpcMethod,
 };
